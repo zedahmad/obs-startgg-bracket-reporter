@@ -81,11 +81,23 @@ npm run dist:portable
 
 Outputs a standalone portable executable to `release/`.
 
+### Package (Windows installer)
+
+```bash
+npm run dist
+```
+
+Outputs an NSIS installer (`*Setup*.exe`) to `release/`. Run the installer once,
+then launch the installed app from the Start menu. Unlike the portable executable,
+the installed app does not extract its bundled files on every launch.
+
 If Windows blocks `electron-builder` while extracting symbolic links, enable
 Windows Developer Mode or run the build from an elevated terminal.
 
 Pushing a version tag such as `v1.2.0` runs the GitHub Actions release workflow,
-builds the portable executable, and attaches it to a GitHub release.
+builds both the Windows installer and portable executable, and attaches both to a
+GitHub release. Choose the `Setup` executable for installation or the executable
+without `Setup` for portable use.
 
 ---
 

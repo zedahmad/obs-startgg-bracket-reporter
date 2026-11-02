@@ -6,10 +6,16 @@ import cors from "cors";
 import fs from "fs";
 import {
   getStartggApiKey,
+  getScoreboardSettings,
   getTournamentSlug,
   readConfig,
   saveConfig,
 } from "./services/config";
+import {
+  DEFAULT_SCOREBOARD_SETTINGS,
+  parseScoreboardSettings,
+  patchScoreboardSettings,
+} from "./core/scoreboardSettings";
 import { isMatchNotNull } from "./core/types";
 import { assignStreamToSet } from "./services/assignStream";
 import { startSetOnStartGG } from "./services/startMatch";
@@ -24,8 +30,12 @@ import { createDraftRouter } from "./routes/draft";
 import type { Match, TournamentStream } from "./core/types";
 import { getTournamentStreams } from "./services/getStreams";
 import { finalSubmitResultToStartGG } from "./services/submitResult";
+import { listenOnAvailablePort } from "./services/listenOnAvailablePort";
 
 let streams: TournamentStream[] = [];
+let scoreboardRevision = 0;
+type AppMode = "startgg" | "offline";
+let appMode: AppMode | null = null;
 const OFFLINE_MATCH_ID = "offline-match";
 const OFFLINE_STREAM: TournamentStream = {
   id: "offline",
@@ -34,6 +44,15 @@ const OFFLINE_STREAM: TournamentStream = {
 };
 
 const app = express();
+let broadcastAppState = () => {};
+
+function getAppState() {
+  return {
+    mode: appMode,
+    matchesData: store.getState(),
+    streamsData: streams,
+  };
+}
 
 const logPath = path.join(
   (process as any).pkg ? path.dirname(process.execPath) : process.cwd(),
@@ -66,12 +85,39 @@ app.use("/scoreboard", express.static(path.join(publicBase, "scoreboard")));
 app.use("/draft-overlay", express.static(path.join(publicBase, "draft-overlay")));
 app.use("/assets", express.static(assetsBase));
 
-app.get("/config", (_req, res) => {
+function getPublicUrls(req: express.Request) {
+  const origin = `${req.protocol}://${req.get("host")}`;
+
+  return {
+    scoreboard: `${origin}/scoreboard`,
+    draftController: `${origin}/draft`,
+    draftOverlay: `${origin}/draft-overlay`,
+  };
+}
+
+app.get("/config", (req, res) => {
   res.json({
     hasStartggToken: Boolean(getStartggApiKey()),
     hasTournamentSlug: Boolean(getTournamentSlug()),
     tournamentSlug: getTournamentSlug(),
+    scoreboard: getScoreboardSettings(),
+    scoreboardRevision,
+    scoreboardDefaults: DEFAULT_SCOREBOARD_SETTINGS,
+    urls: getPublicUrls(req),
   });
+});
+
+app.get("/settings", (_req, res) => {
+  res.json({
+    hasStartggToken: Boolean(getStartggApiKey()),
+    scoreboard: getScoreboardSettings(),
+    scoreboardRevision,
+    scoreboardDefaults: DEFAULT_SCOREBOARD_SETTINGS,
+  });
+});
+
+app.get("/app-state", (_req, res) => {
+  res.json(getAppState());
 });
 
 function normalizeTournamentSlug(value: string) {
@@ -130,10 +176,103 @@ const io = new Server(server, {
   transports: ["websocket", "polling"],
 });
 
+broadcastAppState = () => {
+  io.emit("app:state", getAppState());
+};
+
+function persistScoreboardSettings(value: unknown, patch?: unknown) {
+  const scoreboard = patch === undefined
+    ? parseScoreboardSettings(value)
+    : patchScoreboardSettings(getScoreboardSettings(), patch);
+  const currentConfig = readConfig();
+
+  saveConfig({
+    ...currentConfig,
+    SCOREBOARD_SETTINGS: scoreboard,
+  });
+  scoreboardRevision += 1;
+  io.emit("scoreboard:settings", scoreboard, scoreboardRevision);
+
+  return scoreboard;
+}
+
+app.post("/settings/scoreboard", (req, res) => {
+  try {
+    return res.json({
+      scoreboard: persistScoreboardSettings(
+        req.body.scoreboard,
+        req.body.scoreboardPatch,
+      ),
+      scoreboardRevision,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      error:
+        error instanceof Error ? error.message : "Invalid scoreboard settings",
+    });
+  }
+});
+
+app.post("/settings/startgg-token", (req, res) => {
+  const { startggApiToken } = req.body;
+
+  if (typeof startggApiToken !== "string" || !startggApiToken.trim()) {
+    return res.status(400).json({
+      error: "startggApiToken is required",
+    });
+  }
+
+  const currentConfig = readConfig();
+  saveConfig({
+    ...currentConfig,
+    STARTGG_API_TOKEN: startggApiToken.trim(),
+  });
+
+  return res.json({ hasStartggToken: true });
+});
+
+app.post("/settings", (req, res) => {
+  const { startggApiToken, scoreboard } = req.body;
+
+  if (
+    startggApiToken !== undefined &&
+    typeof startggApiToken !== "string"
+  ) {
+    return res.status(400).json({
+      error: "startggApiToken must be a string",
+    });
+  }
+
+  try {
+    const token = startggApiToken?.trim();
+    const nextScoreboardSettings = persistScoreboardSettings(scoreboard);
+
+    if (token) {
+      const currentConfig = readConfig();
+      saveConfig({
+        ...currentConfig,
+        STARTGG_API_TOKEN: token,
+      });
+    }
+
+    return res.json({
+      hasStartggToken: Boolean(token || getStartggApiKey()),
+      scoreboard: nextScoreboardSettings,
+      scoreboardRevision,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      error:
+        error instanceof Error ? error.message : "Invalid scoreboard settings",
+    });
+  }
+});
+
 // ── Emit match state on every store change ────────────────────────────────
 
 store.subscribe((state) => {
   io.emit("match:update", state);
+  broadcastAppState();
 });
 
 // ── Draft + Stream Deck routes ────────────────────────────────────────────
@@ -160,7 +299,9 @@ app.use("/draft", draftRouter);
 // ── Send current state to newly connected clients ─────────────────────────
 
 io.on("connection", (socket) => {
+  socket.emit("app:state", getAppState());
   socket.emit("scoreboard:display", getDisplayState());
+  socket.emit("scoreboard:settings", getScoreboardSettings(), scoreboardRevision);
   socket.emit("match:update", store.getState());
   socket.emit("draft:update", draftStore.getState());
 });
@@ -190,10 +331,12 @@ async function refreshFromStartGG() {
 
   const freshStreams = await getTournamentStreams(slug);
 
+  appMode = "startgg";
   streams = freshStreams;
   store.mergeFromStartGG(matches);
   // Emit updated match state to all connected clients
   io.emit("match:update", store.getState());
+  broadcastAppState();
 
   log(`Refreshed ${matches.length} matches`);
   log(`Refreshed ${freshStreams.length} streams`);
@@ -226,16 +369,6 @@ app.post("/offline", (req, res) => {
     });
   }
 
-  if (
-    player1Name.length > 80 ||
-    player2Name.length > 80 ||
-    matchLabel.length > 80
-  ) {
-    return res.status(400).json({
-      error: "Player names and match label must be 80 characters or fewer",
-    });
-  }
-
   const match: Match = {
     id: OFFLINE_MATCH_ID,
     round: matchLabel || "Offline Match",
@@ -249,6 +382,7 @@ app.post("/offline", (req, res) => {
     updatedAt: Date.now(),
   };
 
+  appMode = "offline";
   streams = [OFFLINE_STREAM];
   store.dispatch({
     type: "OFFLINE_MATCH_CONFIGURED",
@@ -278,16 +412,6 @@ app.post("/offline/update", (req, res) => {
   if (!player1Name || !player2Name || !matchLabel) {
     return res.status(400).json({
       error: "player1Name, player2Name, and matchLabel are required",
-    });
-  }
-
-  if (
-    player1Name.length > 80 ||
-    player2Name.length > 80 ||
-    matchLabel.length > 80
-  ) {
-    return res.status(400).json({
-      error: "Player names and match label must be 80 characters or fewer",
     });
   }
 
@@ -563,8 +687,25 @@ if (isProd) {
   });
 }
 
-bootstrap().then(() => {
-  server.listen(3001, '0.0.0.0', () => {
-    log("Server running on http://localhost:3001");
-  });
+const configuredPort = Number(process.env.PORT);
+const preferredPort =
+  Number.isInteger(configuredPort) && configuredPort >= 0
+    ? configuredPort
+    : 3001;
+
+export const serverReady = bootstrap().then(async () => {
+  const port = await listenOnAvailablePort(
+    server,
+    preferredPort,
+    "0.0.0.0",
+    (conflictingPort) => {
+      log(
+        `Port ${conflictingPort} is already in use. Selecting an available port.`,
+      );
+    },
+    Boolean(isProd),
+  );
+
+  log(`Server running on http://localhost:${port}`);
+  return port;
 });

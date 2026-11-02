@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors cyan,magenta \"npm run dev:api\" \"npm run dev:web\"",
+    "dev": "concurrently --kill-others-on-fail --names api,web --prefix-colors cyan,magenta \"npm start --prefix api\" \"npm run dev:web\"",
     "dev:api": "cd api && npm run dev",
     "dev:web": "cd web && npm run dev",
     "dev:electron": "electron .",

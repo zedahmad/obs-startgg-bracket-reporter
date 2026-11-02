@@ -25,6 +25,7 @@
   let currentMatch = null;
   let swapped = false;
   let displayVisible = true;
+  let playerNameBaseFontSize = 28;
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -35,8 +36,63 @@
     el.classList.add("flash");
   }
 
+  function backgroundValue(background) {
+    return background.customCss.trim() ||
+      `linear-gradient(${background.angle}deg, ${background.startColor}, ${background.endColor})`;
+  }
+
+  function setPixelVariable(name, value) {
+    document.documentElement.style.setProperty(name, `${value}px`);
+  }
+
+  function applyScoreboardSettings(settings) {
+    const rootStyle = document.documentElement.style;
+    const { canvas, text, elements } = settings;
+
+    setPixelVariable("--canvas-width", canvas.width);
+    setPixelVariable("--canvas-height", canvas.height);
+    rootStyle.setProperty("--scoreboard-font-family", text.fontFamily);
+    setPixelVariable("--player-name-size", text.playerNameSize);
+    rootStyle.setProperty("--player-name-color", text.playerNameColor);
+    setPixelVariable("--score-size", text.scoreSize);
+    rootStyle.setProperty("--score-color", text.scoreColor);
+    setPixelVariable("--round-size", text.roundSize);
+    rootStyle.setProperty("--round-color", text.roundColor);
+
+    for (const [key, element] of [
+      ["p1", elements.player1],
+      ["p2", elements.player2],
+    ]) {
+      setPixelVariable(`--${key}-x`, element.x);
+      setPixelVariable(`--${key}-y`, element.y);
+      setPixelVariable(`--${key}-width`, element.width);
+      setPixelVariable(`--${key}-height`, element.height);
+      setPixelVariable(`--${key}-score-width`, element.scoreWidth);
+      rootStyle.setProperty(
+        `--${key}-name-background`,
+        backgroundValue(element.nameBackground),
+      );
+      rootStyle.setProperty(
+        `--${key}-score-background`,
+        backgroundValue(element.scoreBackground),
+      );
+    }
+
+    setPixelVariable("--round-x", elements.round.x);
+    setPixelVariable("--round-y", elements.round.y);
+    setPixelVariable("--round-width", elements.round.width);
+    setPixelVariable("--round-height", elements.round.height);
+    rootStyle.setProperty(
+      "--round-background",
+      backgroundValue(elements.round.background),
+    );
+
+    playerNameBaseFontSize = text.playerNameSize;
+    requestAnimationFrame(fitAllPlayerNames);
+  }
+
   function fitPlayerName(el) {
-    const baseFontSize = 28;
+    const baseFontSize = playerNameBaseFontSize;
     el.style.fontSize = `${baseFontSize}px`;
     el.style.letterSpacing = "0px";
 
@@ -172,6 +228,10 @@
     if (wasSwapped !== swapped && currentMatch) {
       renderMatch(currentMatch);
     }
+  });
+
+  socket.on("scoreboard:settings", (settings) => {
+    applyScoreboardSettings(settings);
   });
 
   socket.on("disconnect", () => {

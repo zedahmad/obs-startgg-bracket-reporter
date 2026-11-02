@@ -2,7 +2,7 @@ const { app, BrowserWindow } = require("electron");
 const path = require("path");
 const http = require("http");
 
-const API_URL = "http://127.0.0.1:3001";
+const DEFAULT_API_URL = "http://127.0.0.1:3001";
 const WEB_DEV_URL = "http://127.0.0.1:5173";
 
 function waitForServer(url, retries = 50) {
@@ -40,10 +40,16 @@ function startServer() {
     "dist",
     "server.js",
   );
-  require(serverPath);
+  const apiServer = require(serverPath);
+
+  if (!apiServer.serverReady) {
+    throw new Error("API server did not expose its startup promise");
+  }
+
+  return apiServer.serverReady;
 }
 
-function createWindow() {
+function createWindow(apiUrl) {
   const win = new BrowserWindow({
     width: 1920,
     height: 1080,
@@ -51,23 +57,24 @@ function createWindow() {
   });
 
   if (app.isPackaged) {
-    win.loadURL(API_URL);
+    win.loadURL(apiUrl);
   } else {
     win.loadURL(WEB_DEV_URL);
   }
 }
 
 app.whenReady().then(async () => {
-  if (app.isPackaged) {
-    startServer();
-  }
+  let apiUrl = DEFAULT_API_URL;
 
-  await waitForServer(`${API_URL}/config`);
-  if (!app.isPackaged) {
+  if (app.isPackaged) {
+    const port = await startServer();
+    apiUrl = `http://127.0.0.1:${port}`;
+  } else {
+    await waitForServer(`${apiUrl}/config`);
     await waitForServer(WEB_DEV_URL);
   }
 
-  createWindow();
+  createWindow(apiUrl);
 }).catch((error) => {
   console.error("Failed to launch application:", error);
   app.quit();

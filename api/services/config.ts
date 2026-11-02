@@ -1,5 +1,9 @@
 import fs from "fs";
 import path from "path";
+import {
+  mergeScoreboardSettings,
+  type ScoreboardSettings,
+} from "../core/scoreboardSettings";
 
 declare global {
   namespace NodeJS {
@@ -12,6 +16,7 @@ declare global {
 export type AppConfig = {
   STARTGG_API_TOKEN?: string;
   TOURNAMENT_SLUG?: string;
+  SCOREBOARD_SETTINGS?: ScoreboardSettings;
 };
 
 const appDir = process.pkg ? path.dirname(process.execPath) : process.cwd();
@@ -49,4 +54,8 @@ export function getTournamentSlug() {
   const config = readConfig();
 
   return process.env.TOURNAMENT_SLUG || config.TOURNAMENT_SLUG || "";
+}
+
+export function getScoreboardSettings() {
+  return mergeScoreboardSettings(readConfig().SCOREBOARD_SETTINGS);
 }

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import http from "node:http";
 import test from "node:test";
 import { draftStore } from "../core/draftStore";
 import type { DraftRuleset } from "../core/draftTypes";
@@ -7,6 +8,12 @@ import type { Match } from "../core/types";
 import { store } from "../core/store";
 import { adjustDisplayedScore } from "../routes/streamdeck";
 import { mapSetToMatch } from "../services/mapToMatch";
+import {
+  DEFAULT_SCOREBOARD_SETTINGS,
+  mergeScoreboardSettings,
+  parseScoreboardSettings,
+} from "../core/scoreboardSettings";
+import { listenOnAvailablePort } from "../services/listenOnAvailablePort";
 
 const ruleset: DraftRuleset = {
   name: "Test",
@@ -85,6 +92,69 @@ test("display-side score controls follow swapped players", () => {
     score1: 0,
     score2: 0,
   });
+});
+
+test("scoreboard settings merge persisted partial settings with defaults", () => {
+  const settings = mergeScoreboardSettings({
+    canvas: { width: 1280 },
+    text: { playerNameSize: 32 },
+  });
+
+  assert.equal(settings.canvas.width, 1280);
+  assert.equal(settings.canvas.height, 1080);
+  assert.equal(settings.text.playerNameSize, 32);
+  assert.deepEqual(
+    settings.elements.player1,
+    DEFAULT_SCOREBOARD_SETTINGS.elements.player1,
+  );
+});
+
+test("scoreboard settings reject a score box wider than its player block", () => {
+  const settings = structuredClone(DEFAULT_SCOREBOARD_SETTINGS);
+  settings.elements.player1.scoreWidth = settings.elements.player1.width;
+
+  assert.throws(
+    () => parseScoreboardSettings(settings),
+    /scoreWidth must be smaller/,
+  );
+});
+
+test("server selects an available port when the preferred port is occupied", async () => {
+  const blocker = http.createServer();
+  const candidate = http.createServer();
+
+  const close = (server: http.Server) =>
+    new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+
+  await new Promise<void>((resolve) => {
+    blocker.listen(0, "127.0.0.1", resolve);
+  });
+
+  try {
+    const address = blocker.address();
+    assert.ok(address && typeof address !== "string");
+
+    let conflictDetected = false;
+    const selectedPort = await listenOnAvailablePort(
+      candidate,
+      address.port,
+      "127.0.0.1",
+      () => {
+        conflictDetected = true;
+      },
+    );
+
+    assert.equal(conflictDetected, true);
+    assert.notEqual(selectedPort, address.port);
+  } finally {
+    if (candidate.listening) await close(candidate);
+    if (blocker.listening) await close(blocker);
+  }
 });
 
 test("selecting a scoreboard match replaces the previous local selection", () => {

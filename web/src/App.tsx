@@ -1,19 +1,27 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import {
   assignMatch,
   createOfflineMatch,
+  getAppState,
   getConfig,
+  hideScoreboard,
   refreshStartGG,
   resetScore,
   saveConfig,
   saveResult,
+  saveScoreboardSettings,
+  saveStartggApiToken,
+  showScoreboard,
   startMatch,
   submitFinalResult,
+  swapScoreboardPlayers,
   unassignMatch,
   updateOfflineMatch,
   updateScore,
 } from "./api";
+import SettingsPane from "./SettingsPane";
+import type { ScoreboardSettings } from "./scoreboardSettings";
 import type { Match, TournamentStream } from "./types";
 
 type AppMode = "startgg" | "offline";
@@ -22,6 +30,12 @@ type ScoreboardDisplay = Record<
   string,
   { visible: boolean; swapped: boolean }
 >;
+type SettingsSaveState = "idle" | "saving" | "saved" | "error";
+type ServerAppState = {
+  mode: AppMode | null;
+  matchesData: Record<string, Match>;
+  streamsData: TournamentStream[];
+};
 
 function getStatusLabel(status: Match["status"]) {
   const labels: Record<Match["status"], string> = {
@@ -46,11 +60,25 @@ export default function App() {
   const [player1Input, setPlayer1Input] = useState("");
   const [player2Input, setPlayer2Input] = useState("");
   const [matchLabelInput, setMatchLabelInput] = useState("Offline Match");
+  const [scoreboardUrl, setScoreboardUrl] = useState("");
   const [savingConfig, setSavingConfig] = useState(false);
   const [activeStreamId, setActiveStreamId] = useState("");
   const [isBusy, setIsBusy] = useState(false);
   const [scoreboardDisplay, setScoreboardDisplay] =
     useState<ScoreboardDisplay>({});
+  const [scoreboardSettings, setScoreboardSettings] =
+    useState<ScoreboardSettings | null>(null);
+  const [scoreboardDefaults, setScoreboardDefaults] =
+    useState<ScoreboardSettings | null>(null);
+  const [configLoadFailed, setConfigLoadFailed] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [savingApiKey, setSavingApiKey] = useState(false);
+  const [settingsSaveState, setSettingsSaveState] =
+    useState<SettingsSaveState>("idle");
+  const settingsSaveTimerRef = useRef<number | null>(null);
+  const latestScoreboardSettingsRef = useRef<ScoreboardSettings | null>(null);
+  const settingsSaveInFlightRef = useRef(false);
+  const settingsOpenRef = useRef(false);
 
   const currentMatch =
     mode === "offline"
@@ -61,9 +89,12 @@ export default function App() {
           ) ?? null
         : null;
 
+  const scoreboardDisplayKey =
+    mode === "startgg" && activeStreamId ? activeStreamId : "default";
   const displaySettings =
-    scoreboardDisplay[activeStreamId] ?? scoreboardDisplay.default;
+    scoreboardDisplay[scoreboardDisplayKey] ?? scoreboardDisplay.default;
   const playersSwapped = displaySettings?.swapped ?? false;
+  const scoreboardVisible = displaySettings?.visible ?? true;
   const displayedPlayer1 = currentMatch
     ? playersSwapped
       ? currentMatch.player2
@@ -117,6 +148,35 @@ export default function App() {
       <p>{description}</p>
     </div>
   );
+
+  const applyServerAppState = useCallback((state: ServerAppState) => {
+    const nextMatches = state.matchesData ?? {};
+    const nextStreams = state.streamsData ?? [];
+    const offlineMatch = nextMatches["offline-match"];
+
+    setMatches(nextMatches);
+    setStreams(nextStreams);
+    setActiveStreamId((previousStreamId) => {
+      if (nextStreams.some((stream) => stream.id === previousStreamId)) {
+        return previousStreamId;
+      }
+
+      const assignedMatch = Object.values(nextMatches).find(
+        (match) => match.streamId,
+      );
+      return assignedMatch?.streamId ?? nextStreams[0]?.id ?? "";
+    });
+
+    if (state.mode === "offline" && offlineMatch) {
+      setPlayer1Input(offlineMatch.player1.name);
+      setPlayer2Input(offlineMatch.player2.name);
+      setMatchLabelInput(offlineMatch.round || "Offline Match");
+      setMode("offline");
+      return;
+    }
+
+    setMode(state.mode);
+  }, []);
 
   const refreshFromStartGG = async () => {
     setIsBusy(true);
@@ -291,39 +351,206 @@ export default function App() {
     }
   };
 
+  async function persistLatestScoreboardSettings() {
+    if (settingsSaveInFlightRef.current) return;
+
+    const settingsToSave = latestScoreboardSettingsRef.current;
+    if (!settingsToSave) return;
+
+    settingsSaveInFlightRef.current = true;
+    setSettingsSaveState("saving");
+
+    try {
+      const result = await saveScoreboardSettings(settingsToSave);
+
+      if (latestScoreboardSettingsRef.current === settingsToSave) {
+        setScoreboardSettings(result.scoreboard);
+        setSettingsSaveState("saved");
+      }
+    } catch (error) {
+      console.error("Failed to apply scoreboard settings:", error);
+      setSettingsSaveState("error");
+      alert("Failed to apply the scoreboard settings.");
+    } finally {
+      settingsSaveInFlightRef.current = false;
+
+      if (latestScoreboardSettingsRef.current !== settingsToSave) {
+        void persistLatestScoreboardSettings();
+      }
+    }
+  }
+
+  const handleScoreboardSettingsChange = (
+    nextSettings: ScoreboardSettings,
+    debounce: boolean,
+  ) => {
+    setScoreboardSettings(nextSettings);
+    latestScoreboardSettingsRef.current = nextSettings;
+    setSettingsSaveState("saving");
+
+    if (settingsSaveTimerRef.current !== null) {
+      window.clearTimeout(settingsSaveTimerRef.current);
+    }
+
+    if (debounce) {
+      settingsSaveTimerRef.current = window.setTimeout(() => {
+        settingsSaveTimerRef.current = null;
+        void persistLatestScoreboardSettings();
+      }, 350);
+    } else {
+      settingsSaveTimerRef.current = null;
+      void persistLatestScoreboardSettings();
+    }
+  };
+
+  const handleSaveApiKey = async (apiToken: string) => {
+    setSavingApiKey(true);
+
+    try {
+      const result = await saveStartggApiToken(apiToken);
+      setHasSavedToken(Boolean(result.hasStartggToken));
+      return true;
+    } catch (error) {
+      console.error("Failed to save start.gg API key:", error);
+      alert("Failed to save the start.gg API key.");
+      return false;
+    } finally {
+      setSavingApiKey(false);
+    }
+  };
+
+  const handleSwapPlayers = async () => {
+    setIsBusy(true);
+
+    try {
+      await swapScoreboardPlayers(
+        scoreboardDisplayKey === "default" ? undefined : scoreboardDisplayKey,
+      );
+    } catch (error) {
+      console.error("Failed to swap scoreboard players:", error);
+      alert("Failed to swap the scoreboard players.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleScoreboardVisibility = async () => {
+    setIsBusy(true);
+
+    try {
+      if (scoreboardVisible) {
+        await hideScoreboard(
+          scoreboardDisplayKey === "default" ? undefined : scoreboardDisplayKey,
+        );
+      } else {
+        await showScoreboard(
+          scoreboardDisplayKey === "default" ? undefined : scoreboardDisplayKey,
+        );
+      }
+    } catch (error) {
+      console.error("Failed to update scoreboard visibility:", error);
+      alert("Failed to update scoreboard visibility.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
   useEffect(() => {
-    getConfig()
-      .then((data) => {
-        setHasSavedToken(Boolean(data.hasStartggToken));
-        setSlugInput(data.tournamentSlug ?? "");
+    Promise.all([getConfig(), getAppState()])
+      .then(([config, appState]) => {
+        setHasSavedToken(Boolean(config.hasStartggToken));
+        setSlugInput(config.tournamentSlug ?? "");
+        setScoreboardSettings(config.scoreboard);
+        setScoreboardDefaults(config.scoreboardDefaults);
+        setScoreboardUrl(config.urls?.scoreboard ?? "");
+        latestScoreboardSettingsRef.current = config.scoreboard;
+        applyServerAppState(appState);
       })
-      .catch(() => setHasSavedToken(false));
-  }, []);
+      .catch((error) => {
+        console.error("Failed to load application configuration:", error);
+        setHasSavedToken(false);
+        setConfigLoadFailed(true);
+      });
+  }, [applyServerAppState]);
 
   useEffect(() => {
     const socket = io();
 
+    socket.on("app:state", applyServerAppState);
     socket.on("match:update", (updatedMatches: Record<string, Match>) => {
       setMatches(updatedMatches);
     });
     socket.on("scoreboard:display", (display: ScoreboardDisplay) => {
       setScoreboardDisplay(display);
     });
+    socket.on("scoreboard:settings", (settings: ScoreboardSettings) => {
+      if (
+        !settingsOpenRef.current &&
+        !settingsSaveInFlightRef.current &&
+        settingsSaveTimerRef.current === null
+      ) {
+        latestScoreboardSettingsRef.current = settings;
+        setScoreboardSettings(settings);
+      }
+    });
 
     return () => {
       socket.disconnect();
     };
+  }, [applyServerAppState]);
+
+  useEffect(() => {
+    settingsOpenRef.current = settingsOpen;
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (settingsSaveTimerRef.current !== null) {
+        window.clearTimeout(settingsSaveTimerRef.current);
+      }
+    };
   }, []);
 
-  if (hasSavedToken === null) {
+  if (configLoadFailed) {
+    return (
+      <main className="app-shell setup-shell">
+        <section className="panel setup-panel">
+          <p className="eyebrow">Configuration error</p>
+          <h1>Unable to load settings</h1>
+          <p className="hero-copy setup-copy">
+            The application could not load its saved configuration.
+          </p>
+          <button className="button" onClick={() => window.location.reload()}>
+            Try Again
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (
+    hasSavedToken === null ||
+    scoreboardSettings === null ||
+    scoreboardDefaults === null
+  ) {
     return loadingStateComponent("Loading...");
   }
 
   if (!mode) {
     return (
-      <main className="app-shell setup-shell">
-        {isBusy && loadingStateComponent("Processing...")}
-        <section className="panel setup-panel">
+      <>
+        <main className="app-shell setup-shell">
+          {isBusy && loadingStateComponent("Processing...")}
+          <section className="panel setup-panel">
+            <div className="setup-toolbar">
+              <button
+                className="button ghost"
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+              >
+                Settings
+              </button>
+            </div>
           {setupView === "choice" && (
             <>
               <p className="eyebrow">Scoreboard setup</p>
@@ -446,7 +673,6 @@ export default function App() {
                 value={player1Input}
                 onChange={(event) => setPlayer1Input(event.target.value)}
                 placeholder="Player 1 name"
-                maxLength={80}
                 autoFocus
               />
 
@@ -459,7 +685,6 @@ export default function App() {
                 value={player2Input}
                 onChange={(event) => setPlayer2Input(event.target.value)}
                 placeholder="Player 2 name"
-                maxLength={80}
               />
 
               <label className="field-label" htmlFor="match-label">
@@ -471,7 +696,6 @@ export default function App() {
                 value={matchLabelInput}
                 onChange={(event) => setMatchLabelInput(event.target.value)}
                 placeholder="Offline Match"
-                maxLength={80}
               />
 
               <button
@@ -483,15 +707,29 @@ export default function App() {
               </button>
             </form>
           )}
-        </section>
-      </main>
+          </section>
+        </main>
+        {settingsOpen && (
+          <SettingsPane
+            settings={scoreboardSettings}
+            defaults={scoreboardDefaults}
+            hasSavedToken={hasSavedToken}
+            savingApiKey={savingApiKey}
+            autoSaveState={settingsSaveState}
+            onClose={() => setSettingsOpen(false)}
+            onSettingsChange={handleScoreboardSettingsChange}
+            onSaveApiKey={handleSaveApiKey}
+          />
+        )}
+      </>
     );
   }
 
   return (
-    <main className="app-shell">
-      {isBusy && loadingStateComponent("Processing...")}
-      <section className="hero compact-hero">
+    <>
+      <main className="app-shell">
+        {isBusy && loadingStateComponent("Processing...")}
+        <section className="hero compact-hero">
         <div>
           <p className="eyebrow">
             {mode === "offline" ? "Offline scoreboard" : "Tournament operations"}
@@ -508,6 +746,12 @@ export default function App() {
           </p>
         </div>
         <div className="hero-actions">
+          <button
+            className="button ghost"
+            onClick={() => setSettingsOpen(true)}
+          >
+            Settings
+          </button>
           {mode === "startgg" && (
             <button className="button secondary" onClick={refreshFromStartGG}>
               Refresh from start.gg
@@ -646,7 +890,6 @@ export default function App() {
                       ? setPlayer2Input(event.target.value)
                       : setPlayer1Input(event.target.value)
                   }
-                  maxLength={80}
                 />
 
                 <label className="field-label" htmlFor="active-player-two">
@@ -661,7 +904,6 @@ export default function App() {
                       ? setPlayer1Input(event.target.value)
                       : setPlayer2Input(event.target.value)
                   }
-                  maxLength={80}
                 />
 
                 <label className="field-label" htmlFor="active-match-label">
@@ -672,7 +914,6 @@ export default function App() {
                   type="text"
                   value={matchLabelInput}
                   onChange={(event) => setMatchLabelInput(event.target.value)}
-                  maxLength={80}
                 />
 
                 <button
@@ -688,7 +929,7 @@ export default function App() {
                 </button>
               </form>
               <p className="offline-help">
-                OBS overlay: <code>http://localhost:3001/scoreboard</code>
+                OBS overlay: <code>{scoreboardUrl}</code>
               </p>
             </div>
           )}
@@ -700,15 +941,33 @@ export default function App() {
               <p className="eyebrow">{selectedStreamName}</p>
               <h2>Stream Control</h2>
             </div>
-            {mode === "startgg" && (
+            <div className="panel-header-actions">
               <button
-                className="button ghost"
+                className="button secondary"
                 disabled={!currentMatch}
-                onClick={unassignStreamMatch}
+                onClick={handleSwapPlayers}
               >
-                Clear Scoreboard
+                Swap Player Sides
               </button>
-            )}
+              <button
+                className={`button ${scoreboardVisible ? "ghost" : "danger"}`}
+                disabled={!currentMatch}
+                onClick={handleScoreboardVisibility}
+              >
+                {scoreboardVisible
+                  ? "Hide Scoreboard"
+                  : "Scoreboard Hidden - Show"}
+              </button>
+              {mode === "startgg" && (
+                <button
+                  className="button ghost"
+                  disabled={!currentMatch}
+                  onClick={unassignStreamMatch}
+                >
+                  Clear Scoreboard
+                </button>
+              )}
+            </div>
           </div>
 
           {!currentMatch && emptyStreamControlMatchComponent()}
@@ -924,7 +1183,20 @@ export default function App() {
             </div>
           )}
         </section>
-      </div>
-    </main>
+        </div>
+      </main>
+      {settingsOpen && (
+        <SettingsPane
+          settings={scoreboardSettings}
+          defaults={scoreboardDefaults}
+          hasSavedToken={hasSavedToken}
+          savingApiKey={savingApiKey}
+          autoSaveState={settingsSaveState}
+          onClose={() => setSettingsOpen(false)}
+          onSettingsChange={handleScoreboardSettingsChange}
+          onSaveApiKey={handleSaveApiKey}
+        />
+      )}
+    </>
   );
 }

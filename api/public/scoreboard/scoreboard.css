@@ -3,20 +3,37 @@
    Adjust these to reposition/resize elements without touching anything else.
    ============================================================================= */
 :root {
-  /* ── Element positions (within the 1920×1080 OBS canvas) ───────────────── */
-  --match-top:    158px;         /* match info: distance from top              */
+  --canvas-width: 1920px;
+  --canvas-height: 1080px;
+  --scoreboard-font-family: "Barlow Condensed", sans-serif;
+  --player-name-size: 28px;
+  --player-name-color: #fff;
+  --score-size: 38px;
+  --score-color: #111;
+  --round-size: 18px;
+  --round-color: #fff;
 
-  --p1-top:       140px;         /* ~20% of 1080px                             */
-  --p1-left:      396px;         /* P1 block: distance from left edge          */
+  --p1-x: 340px;
+  --p1-y: 140px;
+  --p1-width: 368px;
+  --p1-height: 60px;
+  --p1-score-width: 68px;
+  --p1-name-background: linear-gradient(270deg, #527aa0, #4f4c83);
+  --p1-score-background: linear-gradient(90deg, #fff, #fff);
 
-  --p2-top:       140px;
-  --p2-right:     396px;         /* P2 block: distance from right edge         */
+  --p2-x: 1212px;
+  --p2-y: 140px;
+  --p2-width: 368px;
+  --p2-height: 60px;
+  --p2-score-width: 68px;
+  --p2-name-background: linear-gradient(90deg, #527aa0, #4f4c83);
+  --p2-score-background: linear-gradient(90deg, #fff, #fff);
 
-  /* ── Panel dimensions ──────────────────────────────────────────────────── */
-  --panel-height: 60px;
-  --panel-width:  300px;
-  --score-width:  68px;
-  --player-block-offset: 56px;
+  --round-x: 863px;
+  --round-y: 158px;
+  --round-width: 194px;
+  --round-height: 32px;
+  --round-background: linear-gradient(90deg, #8b2a75, #d00a69);
 }
 
 /* =============================================================================
@@ -24,15 +41,22 @@
    ============================================================================= */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html,
 body {
-  background: transparent;
-  font-family: "Barlow Condensed", sans-serif;
+  width: var(--canvas-width);
+  height: var(--canvas-height);
+  overflow: hidden;
 }
 
-/* Root just manages visibility — no layout of its own */
+body {
+  background: transparent;
+  font-family: var(--scoreboard-font-family);
+}
+
 #root {
-  position: fixed;
-  inset: 0;
+  position: relative;
+  width: var(--canvas-width);
+  height: var(--canvas-height);
   pointer-events: none;
   transition: opacity 0.4s ease;
 }
@@ -45,20 +69,21 @@ body {
    ============================================================================= */
 #match-info {
   position: absolute;
-  top:  var(--match-top);
-  left: 50%;
-  transform: translateX(-50%);
+  top: var(--round-y);
+  left: var(--round-x);
+  width: var(--round-width);
+  height: var(--round-height);
   filter: drop-shadow(0 4px 14px rgba(0,0,0,0.65));
 }
 
 #matchPill {
-  background: linear-gradient(to right, #8b2a75, #d00a69);
+  width: 100%;
+  height: 100%;
+  background: var(--round-background);
   border-radius: 10px;
-  width: 194px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 5px 0;
   white-space: nowrap;
   overflow: hidden;
   transition: opacity 0.3s ease;
@@ -67,8 +92,8 @@ body {
 #matchPill.empty { opacity: 0; }
 
 #matchPill span {
-  color: #fff;
-  font-size: 18px;
+  color: var(--round-color);
+  font-size: var(--round-size);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -81,29 +106,29 @@ body {
 #p1-block,
 #p2-block {
   position: absolute;
-  top: var(--p1-top);            /* same default; override individually if needed */
   display: flex;
   align-items: stretch;
   filter: drop-shadow(0 4px 14px rgba(0,0,0,0.65));
 }
 
 #p1-block {
-  left: var(--p1-left);
-  top: var(--p1-top);
-  transform: translateX(calc(-1 * var(--player-block-offset)));
+  top: var(--p1-y);
+  left: var(--p1-x);
+  width: var(--p1-width);
+  height: var(--p1-height);
 }
 
 #p2-block {
-  right: var(--p2-right);
-  top: var(--p2-top);
-  transform: translateX(var(--player-block-offset));
+  top: var(--p2-y);
+  left: var(--p2-x);
+  width: var(--p2-width);
+  height: var(--p2-height);
 }
 
 /* ── Name panels ─────────────────────────────────────────────────────────── */
 
 .name-panel {
-  width: var(--panel-width);
-  height: var(--panel-height);
+  height: 100%;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -112,8 +137,9 @@ body {
 
 /* P1: rounded rect, outer corners rounded */
 .name-panel.p1 {
+  width: calc(var(--p1-width) - var(--p1-score-width));
   flex-direction: row;           /* badge at far left (outer), name toward score box */
-  background: linear-gradient(to left, #527aa0, #4f4c83);
+  background: var(--p1-name-background);
   border-radius: 0 0 0 4px;
   border-top-left-radius: 24px 24px;
   padding-left: 8px;
@@ -122,8 +148,9 @@ body {
 
 /* P2: rounded rect, outer corners rounded */
 .name-panel.p2 {
+  width: calc(var(--p2-width) - var(--p2-score-width));
   flex-direction: row;           /* name toward left, losers badge at far right */
-  background: linear-gradient(to right, #527aa0, #4f4c83);
+  background: var(--p2-name-background);
   border-radius: 0 0 4px 0;
   border-top-right-radius: 24px 24px;
   padding-right: 8px;
@@ -135,8 +162,8 @@ body {
 .player-name {
   flex: 1;
   min-width: 0;
-  color: #fff;
-  font-size: 28px;
+  color: var(--player-name-color);
+  font-size: var(--player-name-size);
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
@@ -156,7 +183,7 @@ body {
   flex-shrink: 0;
   width: 28px;
   height: 28px;
-  display: flex;
+  display: none;
   align-items: center;
   justify-content: center;
   border-radius: 4px;
@@ -168,14 +195,15 @@ body {
   transition: opacity 0.3s ease;
 }
 
-.losers-badge.visible { opacity: 1; }
+.losers-badge.visible {
+  display: flex;
+  opacity: 1;
+}
 
 /* ── Score boxes ─────────────────────────────────────────────────────────── */
 
 .score-box {
-  width: var(--score-width);
-  height: var(--panel-height);
-  background: #fff;
+  height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -183,10 +211,20 @@ body {
   border-radius: 4px;
 }
 
+#p1-block .score-box {
+  width: var(--p1-score-width);
+  background: var(--p1-score-background);
+}
+
+#p2-block .score-box {
+  width: var(--p2-score-width);
+  background: var(--p2-score-background);
+}
+
 .score-val {
-  font-size: 38px;
+  font-size: var(--score-size);
   font-weight: 700;
-  color: #111;
+  color: var(--score-color);
   line-height: 1;
 }
 

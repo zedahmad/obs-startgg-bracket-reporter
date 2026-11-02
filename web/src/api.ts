@@ -1,4 +1,5 @@
 import axios from "axios";
+import type { ScoreboardSettings } from "./scoreboardSettings";
 
 export const assignMatch = async (matchId: string, streamId: string) => {
   const res = await axios.post(`/assign`, {
@@ -111,6 +112,11 @@ export const getConfig = async () => {
   return res.data;
 };
 
+export const getAppState = async () => {
+  const res = await axios.get(`/app-state`);
+  return res.data;
+};
+
 export const saveConfig = async (
   STARTGG_API_TOKEN: string | undefined,
   TOURNAMENT_SLUG: string,
@@ -120,5 +126,36 @@ export const saveConfig = async (
     TOURNAMENT_SLUG,
   });
 
+  return res.data;
+};
+
+export const saveScoreboardSettings = async (
+  scoreboard: ScoreboardSettings,
+) => {
+  const res = await axios.post(`/settings/scoreboard`, { scoreboard });
+
+  return res.data;
+};
+
+export const saveStartggApiToken = async (startggApiToken: string) => {
+  const res = await axios.post(`/settings/startgg-token`, {
+    startggApiToken,
+  });
+
+  return res.data;
+};
+
+export const swapScoreboardPlayers = async (streamId?: string) => {
+  const res = await axios.post(`/streamdeck/swap`, { streamId });
+  return res.data;
+};
+
+export const showScoreboard = async (streamId?: string) => {
+  const res = await axios.post(`/streamdeck/scoreboard/show`, { streamId });
+  return res.data;
+};
+
+export const hideScoreboard = async (streamId?: string) => {
+  const res = await axios.post(`/streamdeck/scoreboard/hide`, { streamId });
   return res.data;
 };

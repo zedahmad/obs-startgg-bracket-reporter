@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getSettingsChanges, mergeSettingsChanges } from "./settingsChanges";
 import ScoreboardPreview from "./ScoreboardPreview";
 import type {
   BackgroundSettings,
@@ -310,7 +311,16 @@ export default function SettingsPane({
   onSaveApiKey,
 }: SettingsPaneProps) {
   const [draft, setDraft] = useState(() => structuredClone(settings));
+  const [previousSettings, setPreviousSettings] = useState(settings);
   const [apiToken, setApiToken] = useState("");
+
+  if (previousSettings !== settings) {
+    setPreviousSettings(settings);
+    setDraft(mergeSettingsChanges(
+      settings,
+      getSettingsChanges(previousSettings, draft),
+    ));
+  }
 
   const applyDraft = (
     nextDraft: ScoreboardSettings,

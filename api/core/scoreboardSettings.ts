@@ -356,3 +356,11 @@ export function mergeScoreboardSettings(value: unknown): ScoreboardSettings {
     mergeDefaults(DEFAULT_SCOREBOARD_SETTINGS, value),
   );
 }
+
+export function patchScoreboardSettings(
+  current: ScoreboardSettings,
+  patch: unknown,
+): ScoreboardSettings {
+  requireRecord(patch, "scoreboardPatch");
+  return parseScoreboardSettings(mergeDefaults(current, patch));
+}

@@ -22,6 +22,12 @@ import {
 } from "./api";
 import SettingsPane from "./SettingsPane";
 import type { ScoreboardSettings } from "./scoreboardSettings";
+import {
+  getSettingsChanges,
+  mergeSettingsChanges,
+  type SettingsChanges,
+} from "./settingsChanges";
+import { reconcileOfflineInput, type OfflineDetails } from "./offlineDetails";
 import type { Match, TournamentStream } from "./types";
 
 type AppMode = "startgg" | "offline";
@@ -78,7 +84,12 @@ export default function App() {
   const settingsSaveTimerRef = useRef<number | null>(null);
   const latestScoreboardSettingsRef = useRef<ScoreboardSettings | null>(null);
   const settingsSaveInFlightRef = useRef(false);
-  const settingsOpenRef = useRef(false);
+  const pendingSettingsChangesRef = useRef<SettingsChanges>({});
+  const inFlightSettingsChangesRef = useRef<SettingsChanges>({});
+  const serverScoreboardSettingsRef = useRef<ScoreboardSettings | null>(null);
+  const scoreboardRevisionRef = useRef(-1);
+  const previousOfflineDetailsRef = useRef<OfflineDetails | null>(null);
+  const previousServerModeRef = useRef<AppMode | null | undefined>(undefined);
 
   const currentMatch =
     mode === "offline"
@@ -168,14 +179,25 @@ export default function App() {
     });
 
     if (state.mode === "offline" && offlineMatch) {
-      setPlayer1Input(offlineMatch.player1.name);
-      setPlayer2Input(offlineMatch.player2.name);
-      setMatchLabelInput(offlineMatch.round || "Offline Match");
-      setMode("offline");
-      return;
+      const previous = previousOfflineDetailsRef.current;
+      setPlayer1Input((draft) => reconcileOfflineInput(
+        draft, previous?.player1.name, offlineMatch.player1.name,
+      ));
+      setPlayer2Input((draft) => reconcileOfflineInput(
+        draft, previous?.player2.name, offlineMatch.player2.name,
+      ));
+      setMatchLabelInput((draft) => reconcileOfflineInput(
+        draft, previous?.round, offlineMatch.round || "Offline Match",
+      ));
+      previousOfflineDetailsRef.current = offlineMatch;
+    } else {
+      previousOfflineDetailsRef.current = null;
     }
 
-    setMode(state.mode);
+    if (previousServerModeRef.current !== state.mode) {
+      setMode(state.mode);
+      previousServerModeRef.current = state.mode;
+    }
   }, []);
 
   const refreshFromStartGG = async () => {
@@ -296,9 +318,6 @@ export default function App() {
         ...previousMatches,
         [updatedMatch.id]: updatedMatch,
       }));
-      setPlayer1Input(updatedMatch.player1.name);
-      setPlayer2Input(updatedMatch.player2.name);
-      setMatchLabelInput(updatedMatch.round);
     } catch (error) {
       console.error("Failed to update score:", error);
       alert("Failed to update the score.");
@@ -351,30 +370,59 @@ export default function App() {
     }
   };
 
+  const applyScoreboardSnapshot = useCallback((
+    settings: ScoreboardSettings,
+    revision: number,
+  ) => {
+    if (revision < scoreboardRevisionRef.current) return;
+    scoreboardRevisionRef.current = revision;
+    serverScoreboardSettingsRef.current = settings;
+    const next = mergeSettingsChanges(
+      mergeSettingsChanges(settings, inFlightSettingsChangesRef.current),
+      pendingSettingsChangesRef.current,
+    );
+    latestScoreboardSettingsRef.current = next;
+    setScoreboardSettings(next);
+  }, []);
+
   async function persistLatestScoreboardSettings() {
     if (settingsSaveInFlightRef.current) return;
 
-    const settingsToSave = latestScoreboardSettingsRef.current;
-    if (!settingsToSave) return;
+    const changesToSave = pendingSettingsChangesRef.current;
+    if (!Object.keys(changesToSave).length) return;
 
+    pendingSettingsChangesRef.current = {};
+    inFlightSettingsChangesRef.current = changesToSave;
     settingsSaveInFlightRef.current = true;
     setSettingsSaveState("saving");
+    let saved = false;
+    let retryNewerChanges = false;
 
     try {
-      const result = await saveScoreboardSettings(settingsToSave);
-
-      if (latestScoreboardSettingsRef.current === settingsToSave) {
-        setScoreboardSettings(result.scoreboard);
-        setSettingsSaveState("saved");
-      }
+      const result = await saveScoreboardSettings(changesToSave);
+      applyScoreboardSnapshot(result.scoreboard, result.scoreboardRevision);
+      saved = true;
+      setSettingsSaveState("saved");
     } catch (error) {
+      retryNewerChanges = Object.keys(pendingSettingsChangesRef.current).length > 0;
+      pendingSettingsChangesRef.current = mergeSettingsChanges(
+        changesToSave,
+        pendingSettingsChangesRef.current,
+      );
       console.error("Failed to apply scoreboard settings:", error);
       setSettingsSaveState("error");
       alert("Failed to apply the scoreboard settings.");
     } finally {
       settingsSaveInFlightRef.current = false;
+      inFlightSettingsChangesRef.current = {};
+      if (serverScoreboardSettingsRef.current) {
+        applyScoreboardSnapshot(
+          serverScoreboardSettingsRef.current,
+          scoreboardRevisionRef.current,
+        );
+      }
 
-      if (latestScoreboardSettingsRef.current !== settingsToSave) {
+      if ((saved || retryNewerChanges) && Object.keys(pendingSettingsChangesRef.current).length) {
         void persistLatestScoreboardSettings();
       }
     }
@@ -384,6 +432,12 @@ export default function App() {
     nextSettings: ScoreboardSettings,
     debounce: boolean,
   ) => {
+    const previous = latestScoreboardSettingsRef.current;
+    if (!previous) return;
+    pendingSettingsChangesRef.current = mergeSettingsChanges(
+      pendingSettingsChangesRef.current,
+      getSettingsChanges(previous, nextSettings),
+    );
     setScoreboardSettings(nextSettings);
     latestScoreboardSettingsRef.current = nextSettings;
     setSettingsSaveState("saving");
@@ -460,10 +514,9 @@ export default function App() {
       .then(([config, appState]) => {
         setHasSavedToken(Boolean(config.hasStartggToken));
         setSlugInput(config.tournamentSlug ?? "");
-        setScoreboardSettings(config.scoreboard);
+        applyScoreboardSnapshot(config.scoreboard, config.scoreboardRevision);
         setScoreboardDefaults(config.scoreboardDefaults);
         setScoreboardUrl(config.urls?.scoreboard ?? "");
-        latestScoreboardSettingsRef.current = config.scoreboard;
         applyServerAppState(appState);
       })
       .catch((error) => {
@@ -471,11 +524,14 @@ export default function App() {
         setHasSavedToken(false);
         setConfigLoadFailed(true);
       });
-  }, [applyServerAppState]);
+  }, [applyServerAppState, applyScoreboardSnapshot]);
 
   useEffect(() => {
     const socket = io();
 
+    socket.on("connect", () => {
+      scoreboardRevisionRef.current = -1;
+    });
     socket.on("app:state", applyServerAppState);
     socket.on("match:update", (updatedMatches: Record<string, Match>) => {
       setMatches(updatedMatches);
@@ -483,25 +539,12 @@ export default function App() {
     socket.on("scoreboard:display", (display: ScoreboardDisplay) => {
       setScoreboardDisplay(display);
     });
-    socket.on("scoreboard:settings", (settings: ScoreboardSettings) => {
-      if (
-        !settingsOpenRef.current &&
-        !settingsSaveInFlightRef.current &&
-        settingsSaveTimerRef.current === null
-      ) {
-        latestScoreboardSettingsRef.current = settings;
-        setScoreboardSettings(settings);
-      }
-    });
+    socket.on("scoreboard:settings", applyScoreboardSnapshot);
 
     return () => {
       socket.disconnect();
     };
-  }, [applyServerAppState]);
-
-  useEffect(() => {
-    settingsOpenRef.current = settingsOpen;
-  }, [settingsOpen]);
+  }, [applyServerAppState, applyScoreboardSnapshot]);
 
   useEffect(() => {
     return () => {

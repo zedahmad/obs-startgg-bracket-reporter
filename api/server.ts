@@ -14,6 +14,7 @@ import {
 import {
   DEFAULT_SCOREBOARD_SETTINGS,
   parseScoreboardSettings,
+  patchScoreboardSettings,
 } from "./core/scoreboardSettings";
 import { isMatchNotNull } from "./core/types";
 import { assignStreamToSet } from "./services/assignStream";
@@ -32,6 +33,7 @@ import { finalSubmitResultToStartGG } from "./services/submitResult";
 import { listenOnAvailablePort } from "./services/listenOnAvailablePort";
 
 let streams: TournamentStream[] = [];
+let scoreboardRevision = 0;
 type AppMode = "startgg" | "offline";
 let appMode: AppMode | null = null;
 const OFFLINE_MATCH_ID = "offline-match";
@@ -99,6 +101,7 @@ app.get("/config", (req, res) => {
     hasTournamentSlug: Boolean(getTournamentSlug()),
     tournamentSlug: getTournamentSlug(),
     scoreboard: getScoreboardSettings(),
+    scoreboardRevision,
     scoreboardDefaults: DEFAULT_SCOREBOARD_SETTINGS,
     urls: getPublicUrls(req),
   });
@@ -108,6 +111,7 @@ app.get("/settings", (_req, res) => {
   res.json({
     hasStartggToken: Boolean(getStartggApiKey()),
     scoreboard: getScoreboardSettings(),
+    scoreboardRevision,
     scoreboardDefaults: DEFAULT_SCOREBOARD_SETTINGS,
   });
 });
@@ -176,15 +180,18 @@ broadcastAppState = () => {
   io.emit("app:state", getAppState());
 };
 
-function persistScoreboardSettings(value: unknown) {
-  const scoreboard = parseScoreboardSettings(value);
+function persistScoreboardSettings(value: unknown, patch?: unknown) {
+  const scoreboard = patch === undefined
+    ? parseScoreboardSettings(value)
+    : patchScoreboardSettings(getScoreboardSettings(), patch);
   const currentConfig = readConfig();
 
   saveConfig({
     ...currentConfig,
     SCOREBOARD_SETTINGS: scoreboard,
   });
-  io.emit("scoreboard:settings", scoreboard);
+  scoreboardRevision += 1;
+  io.emit("scoreboard:settings", scoreboard, scoreboardRevision);
 
   return scoreboard;
 }
@@ -192,7 +199,11 @@ function persistScoreboardSettings(value: unknown) {
 app.post("/settings/scoreboard", (req, res) => {
   try {
     return res.json({
-      scoreboard: persistScoreboardSettings(req.body.scoreboard),
+      scoreboard: persistScoreboardSettings(
+        req.body.scoreboard,
+        req.body.scoreboardPatch,
+      ),
+      scoreboardRevision,
     });
   } catch (error) {
     return res.status(400).json({
@@ -247,6 +258,7 @@ app.post("/settings", (req, res) => {
     return res.json({
       hasStartggToken: Boolean(token || getStartggApiKey()),
       scoreboard: nextScoreboardSettings,
+      scoreboardRevision,
     });
   } catch (error) {
     return res.status(400).json({
@@ -289,7 +301,7 @@ app.use("/draft", draftRouter);
 io.on("connection", (socket) => {
   socket.emit("app:state", getAppState());
   socket.emit("scoreboard:display", getDisplayState());
-  socket.emit("scoreboard:settings", getScoreboardSettings());
+  socket.emit("scoreboard:settings", getScoreboardSettings(), scoreboardRevision);
   socket.emit("match:update", store.getState());
   socket.emit("draft:update", draftStore.getState());
 });
@@ -691,6 +703,7 @@ export const serverReady = bootstrap().then(async () => {
         `Port ${conflictingPort} is already in use. Selecting an available port.`,
       );
     },
+    Boolean(isProd),
   );
 
   log(`Server running on http://localhost:${port}`);

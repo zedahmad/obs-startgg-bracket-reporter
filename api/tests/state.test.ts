@@ -12,6 +12,7 @@ import {
   DEFAULT_SCOREBOARD_SETTINGS,
   mergeScoreboardSettings,
   parseScoreboardSettings,
+  patchScoreboardSettings,
 } from "../core/scoreboardSettings";
 import { listenOnAvailablePort } from "../services/listenOnAvailablePort";
 
@@ -117,6 +118,57 @@ test("scoreboard settings reject a score box wider than its player block", () =>
     () => parseScoreboardSettings(settings),
     /scoreWidth must be smaller/,
   );
+});
+
+test("settings patches preserve unrelated concurrent changes", () => {
+  const first = patchScoreboardSettings(DEFAULT_SCOREBOARD_SETTINGS, {
+    text: { playerNameSize: 32 },
+    elements: { player1: { x: 400 } },
+  });
+  const second = patchScoreboardSettings(first, {
+    text: { scoreSize: 48 },
+    elements: { player1: { y: 200 } },
+  });
+
+  assert.equal(second.text.playerNameSize, 32);
+  assert.equal(second.text.scoreSize, 48);
+  assert.equal(second.elements.player1.x, 400);
+  assert.equal(second.elements.player1.y, 200);
+  assert.equal(second.elements.player2.x, DEFAULT_SCOREBOARD_SETTINGS.elements.player2.x);
+});
+
+test("settings patches validate the merged geometry", () => {
+  assert.throws(
+    () => patchScoreboardSettings(DEFAULT_SCOREBOARD_SETTINGS, {
+      elements: { player1: { width: 50 } },
+    }),
+    /scoreWidth must be smaller/,
+  );
+  assert.throws(
+    () => patchScoreboardSettings(DEFAULT_SCOREBOARD_SETTINGS, null),
+    /scoreboardPatch must be an object/,
+  );
+});
+
+test("development port conflicts fail without falling back", async () => {
+  const blocker = http.createServer();
+  const candidate = http.createServer();
+  await new Promise<void>((resolve) => blocker.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = blocker.address();
+    assert.ok(address && typeof address !== "string");
+    await assert.rejects(
+      listenOnAvailablePort(candidate, address.port, "127.0.0.1", () => {
+        assert.fail("Fallback must not be attempted");
+      }, false),
+      { code: "EADDRINUSE" },
+    );
+    assert.equal(candidate.listening, false);
+  } finally {
+    await new Promise<void>((resolve, reject) => {
+      blocker.close((error) => error ? reject(error) : resolve());
+    });
+  }
 });
 
 test("server selects an available port when the preferred port is occupied", async () => {

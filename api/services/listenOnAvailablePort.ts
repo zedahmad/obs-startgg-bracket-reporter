@@ -5,6 +5,7 @@ export function listenOnAvailablePort(
   preferredPort: number,
   host: string,
   onPortConflict: (port: number) => void = () => {},
+  allowFallback = true,
 ) {
   return new Promise<number>((resolve, reject) => {
     const listen = (port: number, allowFallback: boolean) => {
@@ -44,6 +45,6 @@ export function listenOnAvailablePort(
       }
     };
 
-    listen(preferredPort, true);
+    listen(preferredPort, allowFallback);
   });
 }

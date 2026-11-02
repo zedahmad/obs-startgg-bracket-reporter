@@ -52,6 +52,12 @@ Run the API server and web frontend together:
 npm run dev
 ```
 
+Development requires API port `3001` to be free. If API startup fails, this command
+also stops the web frontend instead of connecting it to another running instance.
+Restart the command after API code changes; for API-only watch mode, use
+`npm run dev:api` separately. Packaged/production instances still select an available
+port when their preferred port is occupied.
+
 Then open `http://localhost:5173` in a browser for the bracket manager, or launch the Electron app.
 
 To use the Electron window during development, leave `npm run dev` running and
@@ -131,6 +137,7 @@ All endpoints are on `http://localhost:3001`.
 |---|---|---|---|
 | `GET` | `/config` | — | Check if token/slug are configured |
 | `POST` | `/config` | `{ STARTGG_API_TOKEN, TOURNAMENT_SLUG }` | Save configuration |
+| `POST` | `/settings/scoreboard` | `{ scoreboardPatch }` | Merge changed settings fields into the current configuration; returns `scoreboard` and `scoreboardRevision`. A full `{ scoreboard }` replacement is also supported. |
 
 ### Stream Deck Endpoints
 
@@ -174,6 +181,7 @@ Connect to `http://localhost:3001` with Socket.io. On connection the server imme
 | `match:update` | server → client | `Record<string, Match>` | Full match state; emitted on every change |
 | `draft:update` | server → client | `DraftState` | Full draft state; emitted on every change |
 | `scoreboard:display` | server → client | `Record<string, { visible, swapped }>` | Display state per stream |
+| `scoreboard:settings` | server → client | `ScoreboardSettings, scoreboardRevision` | Full settings plus a revision argument for ordering concurrent updates |
 
 ---
 

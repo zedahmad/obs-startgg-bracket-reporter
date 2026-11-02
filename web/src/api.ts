@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { ScoreboardSettings } from "./scoreboardSettings";
+import type { SettingsChanges } from "./settingsChanges";
 
 export const assignMatch = async (matchId: string, streamId: string) => {
   const res = await axios.post(`/assign`, {
@@ -130,9 +130,9 @@ export const saveConfig = async (
 };
 
 export const saveScoreboardSettings = async (
-  scoreboard: ScoreboardSettings,
+  scoreboardPatch: SettingsChanges,
 ) => {
-  const res = await axios.post(`/settings/scoreboard`, { scoreboard });
+  const res = await axios.post(`/settings/scoreboard`, { scoreboardPatch });
 
   return res.data;
 };

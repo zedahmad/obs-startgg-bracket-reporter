@@ -1,4 +1,4 @@
-name: Build Portable Windows Release
+name: Build Windows Release
 
 on:
   push:
@@ -35,8 +35,14 @@ jobs:
           $version = $env:GITHUB_REF_NAME -replace '^v', ''
           npm version $version --no-git-tag-version
 
-      - name: Build portable Windows executable
-        run: npm run dist:portable
+      - name: Install dependencies
+        run: npm run install:all
+
+      - name: Build application
+        run: npm run build
+
+      - name: Package Windows installer and portable executable
+        run: npx electron-builder --win nsis portable --x64 --publish never
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2

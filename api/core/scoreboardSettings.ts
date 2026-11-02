@@ -6,6 +6,7 @@ export type BackgroundSettings = {
 };
 
 export type PlayerBlockSettings = {
+  enabled: boolean;
   x: number;
   y: number;
   width: number;
@@ -16,6 +17,7 @@ export type PlayerBlockSettings = {
 };
 
 export type RoundBlockSettings = {
+  enabled: boolean;
   x: number;
   y: number;
   width: number;
@@ -60,6 +62,7 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
   },
   elements: {
     player1: {
+      enabled: true,
       x: 340,
       y: 140,
       width: 368,
@@ -79,6 +82,7 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
       },
     },
     player2: {
+      enabled: true,
       x: 1212,
       y: 140,
       width: 368,
@@ -98,6 +102,7 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
       },
     },
     round: {
+      enabled: true,
       x: 863,
       y: 158,
       width: 194,
@@ -137,6 +142,14 @@ function requireNumber(
     value > maximum
   ) {
     throw new Error(`${path} must be between ${minimum} and ${maximum}`);
+  }
+
+  return value;
+}
+
+function requireBoolean(value: unknown, path: string) {
+  if (typeof value !== "boolean") {
+    throw new Error(`${path} must be a boolean`);
   }
 
   return value;
@@ -199,6 +212,7 @@ function parsePlayerBlock(
   }
 
   return {
+    enabled: requireBoolean(block.enabled, `${path}.enabled`),
     x: requireNumber(block.x, `${path}.x`, -10000, 10000),
     y: requireNumber(block.y, `${path}.y`, -10000, 10000),
     width,
@@ -300,6 +314,10 @@ export function parseScoreboardSettings(value: unknown): ScoreboardSettings {
         "scoreboard.elements.player2",
       ),
       round: {
+        enabled: requireBoolean(
+          round.enabled,
+          "scoreboard.elements.round.enabled",
+        ),
         x: requireNumber(
           round.x,
           "scoreboard.elements.round.x",

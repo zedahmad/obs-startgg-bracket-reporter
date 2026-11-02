@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ScoreboardPreview from "./ScoreboardPreview";
 import type {
   BackgroundSettings,
   PlayerBlockSettings,
@@ -56,12 +57,16 @@ type SectionHeadingProps = {
   eyebrow: string;
   title: string;
   onRestore: () => void;
+  enabled?: boolean;
+  onEnabledChange?: (enabled: boolean) => void;
 };
 
 function SectionHeading({
   eyebrow,
   title,
   onRestore,
+  enabled,
+  onEnabledChange,
 }: SectionHeadingProps) {
   return (
     <div className="settings-section-heading">
@@ -69,13 +74,25 @@ function SectionHeading({
         <p className="eyebrow">{eyebrow}</p>
         <h3>{title}</h3>
       </div>
-      <button
-        className="button ghost settings-reset"
-        type="button"
-        onClick={onRestore}
-      >
-        Restore Defaults
-      </button>
+      <div className="settings-section-actions">
+        {enabled !== undefined && onEnabledChange && (
+          <label className="settings-toggle">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(event) => onEnabledChange(event.target.checked)}
+            />
+            <span>{enabled ? "Enabled" : "Disabled"}</span>
+          </label>
+        )}
+        <button
+          className="button ghost settings-reset"
+          type="button"
+          onClick={onRestore}
+        >
+          Restore Defaults
+        </button>
+      </div>
     </div>
   );
 }
@@ -189,6 +206,8 @@ function PlayerBlockEditor({
       <SectionHeading
         eyebrow="Scoreboard element"
         title={title}
+        enabled={value.enabled}
+        onEnabledChange={(enabled) => onChange({ ...value, enabled })}
         onRestore={() => onChange(structuredClone(defaultValue))}
       />
       <div className="settings-grid settings-grid-5">
@@ -313,6 +332,45 @@ export default function SettingsPane({
     saved: "Changes applied",
     error: "Could not apply changes",
   }[autoSaveState];
+  const previewSettings = settingsWithValidCustomCss(draft, settings);
+
+  const applyPreviewGeometry = (
+    nextSettings: ScoreboardSettings,
+    apply: boolean,
+  ) => {
+    const mergePlayerGeometry = (
+      current: PlayerBlockSettings,
+      next: PlayerBlockSettings,
+    ) => ({
+      ...current,
+      x: next.x,
+      y: next.y,
+      width: next.width,
+      height: next.height,
+    });
+    const nextDraft = {
+      ...draft,
+      elements: {
+        player1: mergePlayerGeometry(
+          draft.elements.player1,
+          nextSettings.elements.player1,
+        ),
+        player2: mergePlayerGeometry(
+          draft.elements.player2,
+          nextSettings.elements.player2,
+        ),
+        round: {
+          ...draft.elements.round,
+          x: nextSettings.elements.round.x,
+          y: nextSettings.elements.round.y,
+          width: nextSettings.elements.round.width,
+          height: nextSettings.elements.round.height,
+        },
+      },
+    };
+
+    applyDraft(nextDraft, { apply });
+  };
 
   return (
     <div className="settings-backdrop">
@@ -374,6 +432,16 @@ export default function SettingsPane({
                 </button>
               </form>
             </section>
+
+            <ScoreboardPreview
+              settings={previewSettings}
+              onChange={(nextSettings) =>
+                applyPreviewGeometry(nextSettings, false)
+              }
+              onCommit={(nextSettings) =>
+                applyPreviewGeometry(nextSettings, true)
+              }
+            />
 
             <section className="settings-section">
               <SectionHeading
@@ -568,6 +636,16 @@ export default function SettingsPane({
               <SectionHeading
                 eyebrow="Scoreboard element"
                 title="Round indicator"
+                enabled={draft.elements.round.enabled}
+                onEnabledChange={(enabled) =>
+                  applyDraft({
+                    ...draft,
+                    elements: {
+                      ...draft.elements,
+                      round: { ...draft.elements.round, enabled },
+                    },
+                  })
+                }
                 onRestore={() =>
                   applyDraft({
                     ...draft,

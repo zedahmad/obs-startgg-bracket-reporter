@@ -63,6 +63,10 @@
       ["p1", elements.player1],
       ["p2", elements.player2],
     ]) {
+      rootStyle.setProperty(
+        `--${key}-display`,
+        element.enabled ? "flex" : "none",
+      );
       setPixelVariable(`--${key}-x`, element.x);
       setPixelVariable(`--${key}-y`, element.y);
       setPixelVariable(`--${key}-width`, element.width);
@@ -86,6 +90,10 @@
       "--round-background",
       backgroundValue(elements.round.background),
     );
+    rootStyle.setProperty(
+      "--round-display",
+      elements.round.enabled ? "block" : "none",
+    );
 
     playerNameBaseFontSize = text.playerNameSize;
     requestAnimationFrame(fitAllPlayerNames);
@@ -94,7 +102,7 @@
   function fitPlayerName(el) {
     const baseFontSize = playerNameBaseFontSize;
     el.style.fontSize = `${baseFontSize}px`;
-    el.style.letterSpacing = "0px";
+    el.style.transform = "scaleX(1)";
 
     if (
       !el.textContent ||
@@ -102,17 +110,8 @@
       el.scrollWidth <= el.clientWidth
     ) return;
 
-    const fittedSize = Math.max(
-      8,
-      Math.floor(baseFontSize * (el.clientWidth / el.scrollWidth))
-    );
-    el.style.fontSize = `${fittedSize}px`;
-
-    if (el.scrollWidth > el.clientWidth && el.textContent.length > 1) {
-      const overflow = el.scrollWidth - el.clientWidth;
-      el.style.letterSpacing =
-        `${Math.max(-2, -overflow / (el.textContent.length - 1))}px`;
-    }
+    const fittedScale = Math.max(0.35, el.clientWidth / el.scrollWidth);
+    el.style.transform = `scaleX(${fittedScale})`;
   }
 
   function fitAllPlayerNames() {

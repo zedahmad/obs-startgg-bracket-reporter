@@ -20,6 +20,7 @@
   --p1-score-width: 68px;
   --p1-name-background: linear-gradient(270deg, #527aa0, #4f4c83);
   --p1-score-background: linear-gradient(90deg, #fff, #fff);
+  --p1-display: flex;
 
   --p2-x: 1212px;
   --p2-y: 140px;
@@ -28,12 +29,14 @@
   --p2-score-width: 68px;
   --p2-name-background: linear-gradient(90deg, #527aa0, #4f4c83);
   --p2-score-background: linear-gradient(90deg, #fff, #fff);
+  --p2-display: flex;
 
   --round-x: 863px;
   --round-y: 158px;
   --round-width: 194px;
   --round-height: 32px;
   --round-background: linear-gradient(90deg, #8b2a75, #d00a69);
+  --round-display: block;
 }
 
 /* =============================================================================
@@ -68,6 +71,7 @@ body {
    ① Match info — centered at top, hangs down
    ============================================================================= */
 #match-info {
+  display: var(--round-display);
   position: absolute;
   top: var(--round-y);
   left: var(--round-x);
@@ -112,6 +116,7 @@ body {
 }
 
 #p1-block {
+  display: var(--p1-display);
   top: var(--p1-y);
   left: var(--p1-x);
   width: var(--p1-width);
@@ -119,6 +124,7 @@ body {
 }
 
 #p2-block {
+  display: var(--p2-display);
   top: var(--p2-y);
   left: var(--p2-x);
   width: var(--p2-width);
@@ -169,11 +175,20 @@ body {
   white-space: nowrap;
   overflow: hidden;
   letter-spacing: 0;
-  transition: opacity 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
-.name-panel.p1 .player-name { text-align: right; }
-.name-panel.p2 .player-name { text-align: left;  }
+.name-panel.p1 .player-name {
+  text-align: right;
+  transform-origin: right center;
+}
+
+.name-panel.p2 .player-name {
+  text-align: left;
+  transform-origin: left center;
+}
 
 .player-name.changing { opacity: 0; }
 

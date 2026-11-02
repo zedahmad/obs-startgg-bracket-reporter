@@ -830,6 +830,29 @@ input[type="color"] {
   gap: 16px;
 }
 
+.settings-section-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.settings-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-strong);
+  font-size: 0.76rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.settings-toggle input {
+  width: auto;
+  margin: 0;
+  accent-color: var(--accent-strong);
+}
+
 .settings-reset {
   min-height: 34px;
   padding: 7px 10px;
@@ -923,6 +946,179 @@ input[type="color"] {
   color: var(--danger);
 }
 
+/* WYSIWYG scoreboard editor */
+.wysiwyg-section {
+  gap: 14px;
+}
+
+.wysiwyg-help {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.wysiwyg-preview-container {
+  width: 100%;
+  min-height: 180px;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(2, 6, 23, 0.72);
+}
+
+.wysiwyg-preview-viewport {
+  position: relative;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: #111827;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+}
+
+.wysiwyg-preview-stage {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+  transform-origin: top left;
+  background:
+    linear-gradient(rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    #0f172a;
+  background-size: 80px 80px;
+  touch-action: none;
+  user-select: none;
+}
+
+.wysiwyg-element {
+  position: absolute;
+  cursor: grab;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.65));
+  touch-action: none;
+}
+
+.wysiwyg-element:active {
+  cursor: grabbing;
+}
+
+.wysiwyg-element.is-selected {
+  z-index: 2;
+  outline: 5px solid #22d3ee;
+  outline-offset: 5px;
+}
+
+.wysiwyg-element.is-disabled {
+  opacity: 0.34;
+  filter: grayscale(1) drop-shadow(0 4px 14px rgba(0, 0, 0, 0.65));
+}
+
+.wysiwyg-player-block {
+  display: flex;
+  align-items: stretch;
+}
+
+.wysiwyg-name-panel {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+.wysiwyg-name-panel.p1 {
+  justify-content: flex-end;
+  border-radius: 24px 0 0 4px;
+  text-align: right;
+}
+
+.wysiwyg-name-panel.p1 .wysiwyg-player-name {
+  transform-origin: right center;
+}
+
+.wysiwyg-name-panel.p2 {
+  justify-content: flex-start;
+  border-radius: 0 24px 4px 0;
+  text-align: left;
+}
+
+.wysiwyg-name-panel.p2 .wysiwyg-player-name {
+  transform-origin: left center;
+}
+
+.wysiwyg-player-name {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  transition: transform 0.2s ease;
+}
+
+.wysiwyg-sponsor,
+.wysiwyg-name-separator,
+.wysiwyg-player-tag {
+  color: inherit;
+  font: inherit;
+}
+
+.wysiwyg-score-box {
+  display: flex;
+  height: 100%;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.wysiwyg-round {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.wysiwyg-resize-handle {
+  position: absolute;
+  right: -16px;
+  bottom: -16px;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 5px solid #0f172a;
+  border-radius: 999px;
+  background: #22d3ee;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.42);
+  cursor: nwse-resize;
+}
+
+.wysiwyg-disabled-label {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(220, 38, 38, 0.9);
+  font-family: Inter, sans-serif;
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: uppercase;
+  transform: translate(-50%, -50%);
+}
+
 /* Responsive */
 @media (max-width: 1020px) {
   .status-bar,
@@ -1005,6 +1201,11 @@ input[type="color"] {
   .settings-footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .settings-section-actions {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .settings-api-key-form {

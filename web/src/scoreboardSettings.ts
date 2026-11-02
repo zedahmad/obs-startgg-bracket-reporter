@@ -6,6 +6,7 @@ export type BackgroundSettings = {
 };
 
 export type PlayerBlockSettings = {
+  enabled: boolean;
   x: number;
   y: number;
   width: number;
@@ -16,6 +17,7 @@ export type PlayerBlockSettings = {
 };
 
 export type RoundBlockSettings = {
+  enabled: boolean;
   x: number;
   y: number;
   width: number;

@@ -85,15 +85,22 @@ function PreviewName({
   useLayoutEffect(() => {
     const element = nameRef.current;
     if (!element) return;
+    const parent = element.parentElement;
+    const parentStyle = parent ? window.getComputedStyle(parent) : null;
+    const availableWidth = parent
+      ? parent.clientWidth -
+        Number.parseFloat(parentStyle?.paddingLeft ?? "0") -
+        Number.parseFloat(parentStyle?.paddingRight ?? "0")
+      : 0;
 
     element.style.fontSize = `${fontSize}px`;
     element.style.transform = "scaleX(1)";
 
-    if (element.scrollWidth <= element.clientWidth) return;
+    if (availableWidth <= 0 || element.scrollWidth <= availableWidth) return;
 
     const fittedScale = Math.max(
       0.35,
-      element.clientWidth / element.scrollWidth,
+      availableWidth / element.scrollWidth,
     );
     element.style.transform = `scaleX(${fittedScale})`;
   }, [fontSize, player, sponsor, width]);

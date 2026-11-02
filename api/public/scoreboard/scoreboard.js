@@ -101,16 +101,17 @@
 
   function fitPlayerName(el) {
     const baseFontSize = playerNameBaseFontSize;
+    const availableWidth = el.parentElement?.clientWidth ?? 0;
     el.style.fontSize = `${baseFontSize}px`;
     el.style.transform = "scaleX(1)";
 
     if (
       !el.textContent ||
-      el.clientWidth <= 0 ||
-      el.scrollWidth <= el.clientWidth
+      availableWidth <= 0 ||
+      el.scrollWidth <= availableWidth
     ) return;
 
-    const fittedScale = Math.max(0.35, el.clientWidth / el.scrollWidth);
+    const fittedScale = Math.max(0.35, availableWidth / el.scrollWidth);
     el.style.transform = `scaleX(${fittedScale})`;
   }
 

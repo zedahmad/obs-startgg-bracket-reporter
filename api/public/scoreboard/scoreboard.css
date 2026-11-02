@@ -168,29 +168,42 @@ body {
 .player-name {
   flex: 1;
   min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
   color: var(--player-name-color);
   font-size: var(--player-name-size);
   font-weight: 700;
   line-height: 1;
+}
+
+.player-name-text {
+  display: inline-block;
+  flex-shrink: 0;
   white-space: nowrap;
-  overflow: hidden;
-  letter-spacing: 0;
   transition:
     opacity 0.2s ease,
     transform 0.2s ease;
 }
 
 .name-panel.p1 .player-name {
-  text-align: right;
+  justify-content: flex-end;
+}
+
+.name-panel.p1 .player-name-text {
   transform-origin: right center;
 }
 
 .name-panel.p2 .player-name {
-  text-align: left;
+  justify-content: flex-start;
+}
+
+.name-panel.p2 .player-name-text {
   transform-origin: left center;
 }
 
-.player-name.changing { opacity: 0; }
+.player-name-text.changing { opacity: 0; }
 
 /* ── Losers bracket badge ────────────────────────────────────────────────── */
 

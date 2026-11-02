@@ -1048,9 +1048,8 @@ input[type="color"] {
 }
 
 .wysiwyg-player-name {
-  width: 100%;
-  min-width: 0;
-  overflow: hidden;
+  display: inline-block;
+  flex-shrink: 0;
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;

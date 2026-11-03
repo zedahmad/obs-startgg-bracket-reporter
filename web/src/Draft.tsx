@@ -138,14 +138,12 @@ function SlotRow({
   type,
   team,
   defeated,
-  onToggleDefeated,
 }: {
   chars: DraftCharacter[];
   count: number;
   type: "pick" | "ban";
   team: "A" | "B";
   defeated: Set<string>;
-  onToggleDefeated?: (codename: string) => void;
 }) {
   const slots = Array.from({ length: count }, (_, i) => chars[i] ?? null);
   return (
@@ -156,11 +154,6 @@ function SlotRow({
             char={c}
             state={type === "pick" ? (team === "A" ? "pickedA" : "pickedB") : "banned"}
             defeated={defeated.has(c.codename)}
-            onClick={
-              type === "pick" && onToggleDefeated
-                ? () => onToggleDefeated(c.codename)
-                : undefined
-            }
           />
         : <div key={i} className={styles.emptySlot} />
       )}
@@ -180,12 +173,10 @@ function TeamColumn({
   allChars,
   isActive,
   defeated,
-  onToggleDefeated,
 }: {
   name: string; color: string; picks: string[]; bans: string[];
   pickSlots: number; banSlots: number; allChars: DraftCharacter[]; isActive: boolean;
   defeated: Set<string>;
-  onToggleDefeated?: (codename: string) => void;
 }) {
   const findChar = (codename: string) => allChars.find(c => c.codename === codename)!;
   const team = color === TEAM_A_COLOR ? "A" : "B";
@@ -193,7 +184,7 @@ function TeamColumn({
     <div className={`${styles.teamColumn} ${isActive ? styles.teamColumnActive : ""}`} style={{ "--team-color": color } as React.CSSProperties}>
       <div className={styles.teamColumnName}>
         <span>{name}</span>
-        {isActive && <span className={styles.turnBadge}>YOUR TURN</span>}
+        {isActive && <span className={styles.turnBadge}>TURN</span>}
       </div>
       <div className={styles.progressGroups}>
         <div className={styles.progressGroup}>
@@ -206,7 +197,6 @@ function TeamColumn({
             type="pick"
             team={team as "A" | "B"}
             defeated={defeated}
-            onToggleDefeated={onToggleDefeated}
           />
         </div>
         <div className={styles.progressGroup}>
@@ -248,18 +238,12 @@ function RpsPhase({ state, onWinner }: { state: DraftState; onWinner: (w: 1 | 2)
   const t2 = state.pendingTeam2Name || "Team 2";
   return (
     <div className={styles.rpsRoot}>
-      <div className={styles.phaseKicker}>Before the draft</div>
-      <div className={styles.rpsTitle}>Who won Rock Paper Scissors?</div>
-      <div className={styles.rpsSubtitle}>
-        Tap the winning team. They will take the first action.
-      </div>
+      <div className={styles.rpsTitle}>Who won RPS?</div>
       <div className={styles.rpsBtns}>
         <button onClick={() => onWinner(1)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>
-          <span className={styles.rpsButtonLabel}>Winner</span>
           {t1}
         </button>
         <button onClick={() => onWinner(2)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_B_COLOR } as React.CSSProperties}>
-          <span className={styles.rpsButtonLabel}>Winner</span>
           {t2}
         </button>
       </div>
@@ -268,20 +252,6 @@ function RpsPhase({ state, onWinner }: { state: DraftState; onWinner: (w: 1 | 2)
 }
 
 // ── Main Draft Component ─────────────────────────────────────────────────────
-
-/** How many consecutive actions the current team has from a given step in the order array. */
-function getTurnLength(order: number[], step: number, team: number): number {
-  let n = 0;
-  for (let i = step; i < order.length && order[i] === team; i++) n++;
-  return n;
-}
-
-/** Walk backwards to find where the current team's consecutive run started. */
-function getTurnStartStep(order: number[], step: number, team: number): number {
-  let s = step;
-  while (s > 0 && order[s - 1] === team) s--;
-  return s;
-}
 
 export default function Draft() {
   const [draft, setDraft] = useState<DraftState | null>(null);
@@ -362,22 +332,6 @@ export default function Draft() {
       setError(getErrorMessage(error));
     }
   }, []);
-  const handleToggleDefeated = useCallback(async (
-    team: 0 | 1,
-    codename: string,
-  ) => {
-    try {
-      const result = await draftPost<{ draft: DraftState }>(
-        "/defeat",
-        { team, codename },
-      );
-      setDraft(result.draft);
-      setError(null);
-    } catch (error: unknown) {
-      setError(getErrorMessage(error));
-    }
-  }, []);
-
   if (!draft) return <div className={styles.connecting}>Connecting…</div>;
 
   const { phase, ruleset } = draft;
@@ -405,15 +359,7 @@ export default function Draft() {
   const bansPerTeam = { a: 0, b: 0 };
   ruleset.banOrder.forEach(t => t === 0 ? bansPerTeam.a++ : bansPerTeam.b++);
 
-  const order = phase === "ban" ? ruleset.banOrder : phase === "pick" ? ruleset.pickOrder : [];
   const hasSelection = selectedChars.length > 0;
-
-  // Compute position within multi-char turns for the prompt (e.g. "ban 2 of 2")
-  const turnStart = (phase === "ban" || phase === "pick") && currentTeam !== null
-    ? getTurnStartStep(order, currentStep, currentTeam) : 0;
-  const totalTurnLength = (phase === "ban" || phase === "pick") && currentTeam !== null
-    ? getTurnLength(order, turnStart, currentTeam) : 0;
-  const turnPos   = currentStep - turnStart + 1;
 
   const actingColor = currentTeam === 0 ? TEAM_A_COLOR : currentTeam === 1 ? TEAM_B_COLOR : "#888";
   const actingName  = currentTeam === 0 ? teamAName    : currentTeam === 1 ? teamBName    : "";
@@ -423,32 +369,20 @@ export default function Draft() {
     )
     .filter(Boolean)
     .join(", ");
-  const phaseLabel =
-    phase === "ban" ? "Ban phase" :
-    phase === "pick" ? "Pick phase" :
-    "Draft complete";
   const phaseProgress =
     phase === "ban"
-      ? `Ban ${Math.min(currentStep + 1, ruleset.banOrder.length)} of ${ruleset.banOrder.length}`
+      ? `BAN ${Math.min(currentStep + 1, ruleset.banOrder.length)}/${ruleset.banOrder.length}`
       : phase === "pick"
-        ? `Pick ${Math.min(currentStep + 1, ruleset.pickOrder.length)} of ${ruleset.pickOrder.length}`
-        : `${ruleset.teamSize} characters drafted per team`;
-  const instructionTitle =
+        ? `PICK ${Math.min(currentStep + 1, ruleset.pickOrder.length)}/${ruleset.pickOrder.length}`
+        : "COMPLETE";
+  const actionLabel =
     phase === "complete"
-      ? "Draft complete"
+      ? "DRAFT COMPLETE"
       : hasSelection
-        ? `Confirm ${selectedCharacterNames}`
+        ? `CONFIRM ${selectedCharacterNames}`
         : phase === "ban"
-          ? "Choose a character to ban"
-          : "Choose your character";
-  const instructionDetail =
-    phase === "complete"
-      ? "Hand the tablet back to the organizer. Drafted characters can be tapped below to mark them defeated."
-      : hasSelection
-        ? "Tap Confirm Selection below, or tap a different portrait to change your choice."
-        : totalTurnLength > 1
-          ? `Tap one portrait. This is action ${turnPos} of ${totalTurnLength} for this turn.`
-          : "Tap one portrait to continue.";
+          ? "SELECT A BAN"
+          : "SELECT A CHARACTER";
 
   function getCharState(codename: string): CharState {
     if (allBanned.has(codename))          return "banned";
@@ -461,31 +395,26 @@ export default function Draft() {
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <div className={styles.headerUtilityRow}>
-          <div className={styles.headerMatchup}>
-            <span style={{ color: TEAM_A_COLOR }}>{teamAName}</span>
-            <span className={styles.matchupDivider}>vs</span>
-            <span style={{ color: TEAM_B_COLOR }}>{teamBName}</span>
-          </div>
-          <div className={styles.headerActions}>
-            <button onClick={handleUndo} disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Undo</button>
-            <button onClick={handleRedo} disabled={!canRedo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Redo</button>
-            <button onClick={handleRestart} className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}>Restart</button>
-          </div>
+        <div className={styles.headerStatus} style={{ color: actingColor }}>
+          <span className={styles.phaseBadge}>{phaseProgress}</span>
+          {phase !== "complete" && <strong>{actingName}</strong>}
         </div>
-        <div className={styles.instructionPanel} aria-live="polite">
-          <div className={styles.phaseRow}>
-            <span className={styles.phaseBadge}>{phaseLabel}</span>
-            <span className={styles.phaseProgress}>{phaseProgress}</span>
-          </div>
-          {phase !== "complete" && (
-            <div className={styles.actingTeam} style={{ color: actingColor }}>
-              {actingName}
-              <span>YOUR TURN</span>
-            </div>
+        <div className={styles.headerPrompt} aria-live="polite">
+          {hasSelection ? (
+            <button
+              onClick={handleLockIn}
+              className={`${styles.btn} ${styles.btnPrimary} ${styles.confirmButton}`}
+            >
+              {actionLabel}
+            </button>
+          ) : (
+            actionLabel
           )}
-          <div className={styles.instructionTitle}>{instructionTitle}</div>
-          <div className={styles.instructionDetail}>{instructionDetail}</div>
+        </div>
+        <div className={styles.headerActions}>
+          <button onClick={handleUndo} disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Undo</button>
+          <button onClick={handleRedo} disabled={!canRedo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Redo</button>
+          <button onClick={handleRestart} className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}>Restart</button>
         </div>
       </div>
 
@@ -501,11 +430,6 @@ export default function Draft() {
             allChars={allChars}
             isActive={currentTeam === 0}
             defeated={new Set(teamADefeated)}
-            onToggleDefeated={
-              phase === "complete"
-                ? (codename) => handleToggleDefeated(0, codename)
-                : undefined
-            }
           />
         </div>
         <div className={styles.gridArea}>
@@ -533,13 +457,6 @@ export default function Draft() {
               </div>
             ))}
           </div>
-          {hasSelection && (
-            <div className={styles.confirmRow}>
-              <button onClick={handleLockIn} className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}>
-                Confirm Selection: {selectedCharacterNames}
-              </button>
-            </div>
-          )}
         </div>
         <div className={styles.sidebarRight}>
           <TeamColumn
@@ -552,11 +469,6 @@ export default function Draft() {
             allChars={allChars}
             isActive={currentTeam === 1}
             defeated={new Set(teamBDefeated)}
-            onToggleDefeated={
-              phase === "complete"
-                ? (codename) => handleToggleDefeated(1, codename)
-                : undefined
-            }
           />
         </div>
       </div>

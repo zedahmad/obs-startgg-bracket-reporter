@@ -43,7 +43,6 @@ interface CharCardProps {
   char: DraftCharacter;
   state: CharState;
   onClick?: () => void;
-  size?: number;
   defeated?: boolean;
 }
 
@@ -51,7 +50,6 @@ function CharCard({
   char,
   state,
   onClick,
-  size = 90,
   defeated = false,
 }: CharCardProps) {
   const isBanned      = state === "banned";
@@ -76,8 +74,6 @@ function CharCard({
       title={char.displayName}
       className={`${styles.charCard} ${isClickable ? styles.charCardClickable : ""}`}
       style={{
-        width: size,
-        height: size,
         borderColor,
         boxShadow,
         opacity: isBanned || defeated ? 0.35 : 1,
@@ -159,7 +155,6 @@ function SlotRow({
             key={c.codename}
             char={c}
             state={type === "pick" ? (team === "A" ? "pickedA" : "pickedB") : "banned"}
-            size={52}
             defeated={defeated.has(c.codename)}
             onClick={
               type === "pick" && onToggleDefeated
@@ -167,7 +162,7 @@ function SlotRow({
                 : undefined
             }
           />
-        : <div key={i} className={styles.emptySlot} style={{ width: 52, height: 52 }} />
+        : <div key={i} className={styles.emptySlot} />
       )}
     </div>
   );
@@ -197,26 +192,36 @@ function TeamColumn({
   return (
     <div className={`${styles.teamColumn} ${isActive ? styles.teamColumnActive : ""}`} style={{ "--team-color": color } as React.CSSProperties}>
       <div className={styles.teamColumnName}>
-        {name}
+        <span>{name}</span>
         {isActive && <span className={styles.turnBadge}>YOUR TURN</span>}
       </div>
-      <div className={styles.sectionLabel}>Picks</div>
-      <SlotRow
-        chars={picks.map(findChar).filter(Boolean)}
-        count={pickSlots}
-        type="pick"
-        team={team as "A" | "B"}
-        defeated={defeated}
-        onToggleDefeated={onToggleDefeated}
-      />
-      <div className={styles.sectionLabel}>Bans</div>
-      <SlotRow
-        chars={bans.map(findChar).filter(Boolean)}
-        count={banSlots}
-        type="ban"
-        team={team as "A" | "B"}
-        defeated={new Set()}
-      />
+      <div className={styles.progressGroups}>
+        <div className={styles.progressGroup}>
+          <div className={styles.sectionLabel}>
+            Picks <span>{picks.length}/{pickSlots}</span>
+          </div>
+          <SlotRow
+            chars={picks.map(findChar).filter(Boolean)}
+            count={pickSlots}
+            type="pick"
+            team={team as "A" | "B"}
+            defeated={defeated}
+            onToggleDefeated={onToggleDefeated}
+          />
+        </div>
+        <div className={styles.progressGroup}>
+          <div className={styles.sectionLabel}>
+            Bans <span>{bans.length}/{banSlots}</span>
+          </div>
+          <SlotRow
+            chars={bans.map(findChar).filter(Boolean)}
+            count={banSlots}
+            type="ban"
+            team={team as "A" | "B"}
+            defeated={new Set()}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -243,11 +248,20 @@ function RpsPhase({ state, onWinner }: { state: DraftState; onWinner: (w: 1 | 2)
   const t2 = state.pendingTeam2Name || "Team 2";
   return (
     <div className={styles.rpsRoot}>
+      <div className={styles.phaseKicker}>Before the draft</div>
       <div className={styles.rpsTitle}>Who won Rock Paper Scissors?</div>
-      <div className={styles.rpsSubtitle}>The RPS winner goes first in the draft.</div>
+      <div className={styles.rpsSubtitle}>
+        Tap the winning team. They will take the first action.
+      </div>
       <div className={styles.rpsBtns}>
-        <button onClick={() => onWinner(1)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>{t1}</button>
-        <button onClick={() => onWinner(2)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_B_COLOR } as React.CSSProperties}>{t2}</button>
+        <button onClick={() => onWinner(1)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>
+          <span className={styles.rpsButtonLabel}>Winner</span>
+          {t1}
+        </button>
+        <button onClick={() => onWinner(2)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_B_COLOR } as React.CSSProperties}>
+          <span className={styles.rpsButtonLabel}>Winner</span>
+          {t2}
+        </button>
       </div>
     </div>
   );
@@ -337,6 +351,9 @@ export default function Draft() {
     }
   }, []);
   const handleRestart = useCallback(async () => {
+    if (!window.confirm("Restart this draft and clear all bans and picks?")) {
+      return;
+    }
     try {
       await draftPost("/restart");
       setSelectedChars([]);
@@ -397,17 +414,41 @@ export default function Draft() {
   const totalTurnLength = (phase === "ban" || phase === "pick") && currentTeam !== null
     ? getTurnLength(order, turnStart, currentTeam) : 0;
   const turnPos   = currentStep - turnStart + 1;
-  const posLabel  = totalTurnLength > 1 ? ` (${turnPos} of ${totalTurnLength})` : "";
 
   const actingColor = currentTeam === 0 ? TEAM_A_COLOR : currentTeam === 1 ? TEAM_B_COLOR : "#888";
   const actingName  = currentTeam === 0 ? teamAName    : currentTeam === 1 ? teamBName    : "";
-  const prompt = phase === "complete"
-    ? "Draft complete — click a drafted character to toggle defeated"
-    : hasSelection
-      ? `${actingName}: Lock in ${selectedChars.map(cn => allChars.find(c => c.codename === cn)?.displayName).join(", ")}`
-      : phase === "ban"
-        ? `${actingName}: Select a ban${posLabel}`
-        : `${actingName}: Select a character${posLabel}`;
+  const selectedCharacterNames = selectedChars
+    .map((codename) =>
+      allChars.find((character) => character.codename === codename)?.displayName
+    )
+    .filter(Boolean)
+    .join(", ");
+  const phaseLabel =
+    phase === "ban" ? "Ban phase" :
+    phase === "pick" ? "Pick phase" :
+    "Draft complete";
+  const phaseProgress =
+    phase === "ban"
+      ? `Ban ${Math.min(currentStep + 1, ruleset.banOrder.length)} of ${ruleset.banOrder.length}`
+      : phase === "pick"
+        ? `Pick ${Math.min(currentStep + 1, ruleset.pickOrder.length)} of ${ruleset.pickOrder.length}`
+        : `${ruleset.teamSize} characters drafted per team`;
+  const instructionTitle =
+    phase === "complete"
+      ? "Draft complete"
+      : hasSelection
+        ? `Confirm ${selectedCharacterNames}`
+        : phase === "ban"
+          ? "Choose a character to ban"
+          : "Choose your character";
+  const instructionDetail =
+    phase === "complete"
+      ? "Hand the tablet back to the organizer. Drafted characters can be tapped below to mark them defeated."
+      : hasSelection
+        ? "Tap Confirm Selection below, or tap a different portrait to change your choice."
+        : totalTurnLength > 1
+          ? `Tap one portrait. This is action ${turnPos} of ${totalTurnLength} for this turn.`
+          : "Tap one portrait to continue.";
 
   function getCharState(codename: string): CharState {
     if (allBanned.has(codename))          return "banned";
@@ -420,16 +461,31 @@ export default function Draft() {
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <div className={styles.headerMatchup}>
-          <span style={{ color: TEAM_A_COLOR }}>{teamAName}</span>
-          <span style={{ color: "#444", margin: "0 8px" }}>vs</span>
-          <span style={{ color: TEAM_B_COLOR }}>{teamBName}</span>
+        <div className={styles.headerUtilityRow}>
+          <div className={styles.headerMatchup}>
+            <span style={{ color: TEAM_A_COLOR }}>{teamAName}</span>
+            <span className={styles.matchupDivider}>vs</span>
+            <span style={{ color: TEAM_B_COLOR }}>{teamBName}</span>
+          </div>
+          <div className={styles.headerActions}>
+            <button onClick={handleUndo} disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Undo</button>
+            <button onClick={handleRedo} disabled={!canRedo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Redo</button>
+            <button onClick={handleRestart} className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}>Restart</button>
+          </div>
         </div>
-        <div className={styles.headerPrompt} style={{ color: actingColor }}>{prompt}</div>
-        <div className={styles.headerActions}>
-          <button onClick={handleUndo}    disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>↩ Undo</button>
-          <button onClick={handleRedo}    disabled={!canRedo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>↪ Redo</button>
-          <button onClick={handleRestart}                     className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}>↺ Restart</button>
+        <div className={styles.instructionPanel} aria-live="polite">
+          <div className={styles.phaseRow}>
+            <span className={styles.phaseBadge}>{phaseLabel}</span>
+            <span className={styles.phaseProgress}>{phaseProgress}</span>
+          </div>
+          {phase !== "complete" && (
+            <div className={styles.actingTeam} style={{ color: actingColor }}>
+              {actingName}
+              <span>YOUR TURN</span>
+            </div>
+          )}
+          <div className={styles.instructionTitle}>{instructionTitle}</div>
+          <div className={styles.instructionDetail}>{instructionDetail}</div>
         </div>
       </div>
 
@@ -480,7 +536,7 @@ export default function Draft() {
           {hasSelection && (
             <div className={styles.confirmRow}>
               <button onClick={handleLockIn} className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}>
-                Lock in {selectedChars.map(cn => allChars.find(c => c.codename === cn)?.displayName).join(" + ")}
+                Confirm Selection: {selectedCharacterNames}
               </button>
             </div>
           )}

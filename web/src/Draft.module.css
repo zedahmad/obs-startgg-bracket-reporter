@@ -9,9 +9,16 @@
   display: flex;
   flex-direction: column;
   height: 100dvh;
-  background: #0f0f0f;
+  padding:
+    env(safe-area-inset-top)
+    env(safe-area-inset-right)
+    env(safe-area-inset-bottom)
+    env(safe-area-inset-left);
+  background:
+    radial-gradient(circle at 50% -10%, rgba(43, 92, 152, 0.22), transparent 34rem),
+    #090b10;
   color: #fff;
-  font-family: 'Segoe UI', sans-serif;
+  font-family: "Segoe UI", sans-serif;
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
   user-select: none;
@@ -31,66 +38,162 @@
 
 .header {
   display: flex;
+  flex-direction: column;
+  padding: 10px 16px 14px;
+  background: rgba(10, 13, 19, 0.96);
+  border-bottom: 1px solid #293241;
+  flex-shrink: 0;
+  gap: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.32);
+  z-index: 5;
+}
+
+.headerUtilityRow {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 20px;
-  background: #161616;
-  border-bottom: 1px solid #2a2a2a;
-  flex-shrink: 0;
+  width: 100%;
   gap: 12px;
 }
 
 .headerMatchup {
-  font-size: 13px;
-  font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  font-size: clamp(14px, 2.2vw, 20px);
+  font-weight: 900;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.headerPrompt {
-  flex: 1;
-  text-align: center;
-  font-size: 15px;
-  font-weight: 800;
+.matchupDivider {
+  margin: 0 8px;
+  color: #657083;
+  font-size: 0.75em;
+  text-transform: uppercase;
 }
 
 .headerActions {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex-shrink: 0;
+}
+
+.instructionPanel {
+  display: flex;
+  width: min(100%, 920px);
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 20px 12px;
+  border: 1px solid #2a3546;
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(34, 45, 63, 0.82), rgba(16, 21, 30, 0.92));
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.04);
+  text-align: center;
+}
+
+.phaseRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 2px;
+}
+
+.phaseBadge {
+  padding: 5px 10px;
+  border-radius: 999px;
+  color: #dbeafe;
+  background: #1d4f83;
+  font-size: clamp(11px, 1.5vw, 14px);
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.phaseProgress {
+  color: #9ca9ba;
+  font-size: clamp(12px, 1.8vw, 16px);
+  font-weight: 800;
+}
+
+.actingTeam {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  font-size: clamp(20px, 3.5vw, 32px);
+  font-weight: 1000;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+
+.actingTeam > span {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  font-size: 0.42em;
+  letter-spacing: 0.1em;
+}
+
+.instructionTitle {
+  max-width: 100%;
+  color: #fff;
+  font-size: clamp(25px, 4.8vw, 42px);
+  font-weight: 1000;
+  line-height: 1.08;
+}
+
+.instructionDetail {
+  max-width: 720px;
+  color: #b7c0cd;
+  font-size: clamp(14px, 2.2vw, 19px);
+  font-weight: 650;
+  line-height: 1.35;
 }
 
 /* ── Main area ────────────────────────────────────────────────────────────── */
 
 .main {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas:
+    "team-a team-b"
+    "grid grid";
   flex: 1;
   overflow: hidden;
   min-height: 0;
+  background:
+    linear-gradient(180deg, rgba(23, 29, 40, 0.92), rgba(9, 11, 16, 0) 220px);
 }
 
 .sidebar {
-  padding: 12px 10px 12px 14px;
-  border-right: 1px solid #2a2a2a;
-  overflow-y: auto;
-  flex-shrink: 0;
+  grid-area: team-a;
+  min-width: 0;
+  padding: 12px 6px 8px 12px;
 }
 
 .sidebarRight {
-  padding: 12px 14px 12px 10px;
-  border-left: 1px solid #2a2a2a;
-  overflow-y: auto;
-  flex-shrink: 0;
+  grid-area: team-b;
+  min-width: 0;
+  padding: 12px 12px 8px 6px;
 }
 
 .gridArea {
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-  background: #111;
+  grid-area: grid;
+  position: relative;
   min-width: 0;
+  min-height: 0;
+  padding: 0 12px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   align-items: center;
+  scrollbar-width: thin;
 }
 
 /* ── Character grid — SF3TS staggered 3-column layout ─────────────────────── */
@@ -128,8 +231,22 @@
 }
 
 .confirmRow {
+  position: sticky;
+  z-index: 6;
+  bottom: 4px;
+  width: min(100%, 620px);
+  padding: 10px 12px;
   text-align: center;
-  margin-top: 20px;
+  margin-top: -4px;
+  border: 1px solid rgba(96, 165, 250, 0.35);
+  border-radius: 18px;
+  background: rgba(7, 12, 22, 0.94);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.52);
+  backdrop-filter: blur(12px);
+}
+
+.confirmRow .btn {
+  width: 100%;
 }
 
 /* ── Error bar ────────────────────────────────────────────────────────────── */
@@ -138,10 +255,11 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 16px;
+  padding: 10px 16px;
   background: #5c1515;
   color: #f88;
-  font-size: 13px;
+  font-size: 15px;
+  font-weight: 700;
   flex-shrink: 0;
 }
 
@@ -163,14 +281,15 @@
   align-items: center;
   justify-content: center;
   border: none;
-  border-radius: 8px;
-  padding: 10px 20px;
-  font-size: 14px;
-  font-weight: 700;
+  border-radius: 12px;
+  padding: 11px 20px;
+  font-size: 15px;
+  font-weight: 800;
   cursor: pointer;
-  min-height: 44px;
+  min-height: 50px;
   transition: filter 0.15s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
   text-decoration: none;
 }
 
@@ -190,66 +309,104 @@
 /* Team buttons use --team-color set inline on the element */
 .btnTeam      { background: var(--team-color); color: #000; }
 
-.btnSmall  { padding: 6px 14px; min-height: unset; font-size: 13px; }
-.btnLarge  { font-size: 18px; padding: 14px 48px; min-width: 200px; }
-.btnXlarge { font-size: 20px; padding: 16px 40px; min-width: 180px; }
+.btnSmall  { padding: 8px 12px; min-height: 42px; font-size: 13px; }
+.btnLarge  { font-size: clamp(18px, 3vw, 24px); padding: 16px 32px; min-width: 220px; min-height: 60px; }
+.btnXlarge { font-size: clamp(21px, 4vw, 32px); padding: 20px 28px; min-height: 110px; }
 
 /* ── TeamColumn ───────────────────────────────────────────────────────────── */
 
 /* --team-color is set inline on each TeamColumn instance */
 .teamColumn {
-  background: #1a1a1a;
-  border-radius: 10px;
-  padding: 12px 14px;
-  border: 2px solid #2a2a2a;
-  min-width: 200px;
-  max-width: 280px;
+  --progress-icon-size: clamp(48px, 7.2vw, 66px);
+  height: 100%;
+  min-width: 0;
+  padding: 11px 12px 12px;
+  border: 2px solid #303a49;
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(32, 39, 51, 0.96), rgba(18, 22, 30, 0.96));
   transition: border-color 0.3s, box-shadow 0.3s;
 }
 
 .teamColumnActive {
   border-color: var(--team-color);
-  box-shadow: 0 0 16px color-mix(in srgb, var(--team-color) 30%, transparent);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--team-color) 22%, transparent),
+    0 8px 24px color-mix(in srgb, var(--team-color) 18%, transparent);
 }
 
 .teamColumnName {
-  font-size: 15px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-bottom: 10px;
-  color: var(--team-color);
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
+  margin-bottom: 8px;
+  color: var(--team-color);
+  font-size: clamp(16px, 2.8vw, 24px);
+  font-weight: 1000;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.teamColumnName > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .turnBadge {
-  font-size: 10px;
-  color: #fff;
+  flex-shrink: 0;
+  padding: 4px 7px;
+  border-radius: 8px;
   background: var(--team-color);
-  padding: 2px 6px;
-  border-radius: 10px;
+  color: #081019;
+  font-size: clamp(9px, 1.3vw, 12px);
+  font-weight: 1000;
+  letter-spacing: 0.06em;
+}
+
+.progressGroups {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  align-items: start;
+  gap: 10px;
+}
+
+.progressGroup {
+  min-width: 0;
 }
 
 .sectionLabel {
-  font-size: 10px;
-  color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 5px;
+  color: #a5afbe;
+  font-size: clamp(11px, 1.5vw, 13px);
+  font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 10px;
-  margin-bottom: 6px;
+  letter-spacing: 0.08em;
+}
+
+.sectionLabel span {
+  color: #687587;
+  font-size: 0.9em;
 }
 
 /* ── SlotRow ──────────────────────────────────────────────────────────────── */
 
 .slotRow {
   display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
+  min-width: 0;
+  gap: clamp(3px, 0.7vw, 7px);
+  flex-wrap: nowrap;
 }
 
 .emptySlot {
+  width: var(--progress-icon-size);
+  height: var(--progress-icon-size);
   border-radius: 8px;
   border: 2px dashed #333;
   background: rgba(255, 255, 255, 0.02);
@@ -325,6 +482,8 @@
 
 .charCard {
   position: relative;
+  width: var(--progress-icon-size);
+  height: var(--progress-icon-size);
   border-radius: 8px;
   overflow: hidden;
   border: 2px solid transparent;
@@ -357,7 +516,7 @@
   background: rgba(0, 0, 0, 0.6);
   padding: 3px 4px;
   text-align: center;
-  font-size: 10px;
+  font-size: clamp(8px, 1.2vw, 11px);
   font-weight: 700;
   color: #fff;
   white-space: nowrap;
@@ -380,19 +539,22 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  gap: 24px;
+  gap: 28px;
+  padding: 32px;
+  text-align: center;
 }
 
 .idleTitle {
-  font-size: 28px;
-  font-weight: 800;
+  font-size: clamp(34px, 7vw, 60px);
+  font-weight: 1000;
   color: #fff;
   letter-spacing: 2px;
 }
 
 .idleRoot p {
   max-width: 520px;
-  color: #aaa;
+  color: #b5becb;
+  font-size: clamp(17px, 3vw, 24px);
   line-height: 1.5;
   text-align: center;
 }
@@ -442,25 +604,59 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  gap: 32px;
+  gap: 18px;
+  padding: 32px;
+  background:
+    radial-gradient(circle at 50% 25%, rgba(58, 110, 172, 0.24), transparent 32rem);
+}
+
+.phaseKicker {
+  padding: 7px 12px;
+  border-radius: 999px;
+  color: #bfdcff;
+  background: #153b62;
+  font-size: clamp(12px, 2vw, 16px);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
 .rpsTitle {
-  font-size: 22px;
-  font-weight: 800;
+  max-width: 720px;
+  font-size: clamp(34px, 7vw, 58px);
+  font-weight: 1000;
+  line-height: 1.08;
   color: #fff;
   text-align: center;
 }
 
 .rpsSubtitle {
-  font-size: 13px;
-  color: #888;
+  max-width: 620px;
+  font-size: clamp(17px, 3vw, 24px);
+  color: #b5becb;
+  line-height: 1.4;
   text-align: center;
 }
 
 .rpsBtns {
-  display: flex;
-  gap: 20px;
+  display: grid;
+  width: min(100%, 680px);
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.rpsBtns .btn {
+  flex-direction: column;
+}
+
+.rpsButtonLabel {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.46em;
+  font-weight: 1000;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.72;
 }
 
 /* ── Complete phase ───────────────────────────────────────────────────────── */
@@ -511,4 +707,84 @@
   gap: 8px;
   justify-content: center;
   flex-wrap: wrap;
+}
+
+@media (max-width: 620px) {
+  .header {
+    padding-right: 10px;
+    padding-left: 10px;
+  }
+
+  .headerUtilityRow {
+    align-items: flex-start;
+  }
+
+  .headerMatchup {
+    padding-top: 9px;
+  }
+
+  .headerActions {
+    gap: 5px;
+  }
+
+  .btnSmall {
+    min-height: 40px;
+    padding-right: 9px;
+    padding-left: 9px;
+    font-size: 12px;
+  }
+
+  .instructionPanel {
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .sidebar {
+    padding-left: 8px;
+  }
+
+  .sidebarRight {
+    padding-right: 8px;
+  }
+
+  .teamColumn {
+    --progress-icon-size: clamp(44px, 8vw, 48px);
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+
+  .progressGroups {
+    gap: 6px;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 760px) {
+  .header {
+    padding-top: 7px;
+    padding-bottom: 9px;
+    gap: 7px;
+  }
+
+  .instructionPanel {
+    padding-top: 7px;
+    padding-bottom: 8px;
+  }
+
+  .instructionTitle {
+    font-size: clamp(22px, 3.4vw, 32px);
+  }
+
+  .instructionDetail {
+    font-size: clamp(12px, 1.5vw, 15px);
+  }
+
+  .teamColumn {
+    --progress-icon-size: clamp(40px, 5vw, 56px);
+  }
+
+  .sidebar,
+  .sidebarRight {
+    padding-top: 8px;
+    padding-bottom: 6px;
+  }
 }

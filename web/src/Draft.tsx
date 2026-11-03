@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useLayoutEffect, useRef } from "react";
 import type { DraftState, DraftCharacter } from "./draftTypes";
 import { io } from "socket.io-client";
 import styles from "./Draft.module.css";
@@ -33,6 +33,24 @@ async function draftPost<T = DraftState>(
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unexpected error";
+}
+
+function getTurnProgress(order: number[], currentStep: number) {
+  const team = order[currentStep];
+  let turnStart = currentStep;
+  let turnEnd = currentStep;
+
+  while (turnStart > 0 && order[turnStart - 1] === team) {
+    turnStart -= 1;
+  }
+  while (turnEnd + 1 < order.length && order[turnEnd + 1] === team) {
+    turnEnd += 1;
+  }
+
+  return {
+    completed: currentStep - turnStart,
+    total: turnEnd - turnStart + 1,
+  };
 }
 
 // ── Character card ────────────────────────────────────────────────────────────
@@ -171,46 +189,69 @@ function TeamColumn({
   pickSlots,
   banSlots,
   allChars,
-  isActive,
   defeated,
 }: {
   name: string; color: string; picks: string[]; bans: string[];
-  pickSlots: number; banSlots: number; allChars: DraftCharacter[]; isActive: boolean;
+  pickSlots: number; banSlots: number; allChars: DraftCharacter[];
   defeated: Set<string>;
 }) {
   const findChar = (codename: string) => allChars.find(c => c.codename === codename)!;
   const team = color === TEAM_A_COLOR ? "A" : "B";
+  const nameContainerRef = useRef<HTMLDivElement>(null);
+  const nameRef = useRef<HTMLSpanElement>(null);
+
+  const fitTeamName = useCallback(() => {
+    const container = nameContainerRef.current;
+    const text = nameRef.current;
+    if (!container || !text) return;
+
+    text.style.setProperty("--team-name-scale", "1");
+    const containerStyle = getComputedStyle(container);
+    const availableHeight = container.clientHeight
+      - Number.parseFloat(containerStyle.paddingTop || "0")
+      - Number.parseFloat(containerStyle.paddingBottom || "0");
+
+    if (availableHeight <= 0 || text.scrollHeight <= availableHeight) return;
+
+    const fittedScale = Math.max(0.35, availableHeight / text.scrollHeight);
+    text.style.setProperty("--team-name-scale", `${fittedScale}`);
+  }, []);
+
+  useLayoutEffect(() => {
+    fitTeamName();
+    const observer = new ResizeObserver(fitTeamName);
+    if (nameContainerRef.current) observer.observe(nameContainerRef.current);
+    document.fonts?.ready.then(fitTeamName);
+    return () => observer.disconnect();
+  }, [fitTeamName, name]);
+
   return (
-    <div className={`${styles.teamColumn} ${isActive ? styles.teamColumnActive : ""}`} style={{ "--team-color": color } as React.CSSProperties}>
-      <div className={styles.teamColumnName}>
-        <span>{name}</span>
-        {isActive && <span className={styles.turnBadge}>TURN</span>}
+    <div
+      className={`${styles.teamColumn} ${team === "B" ? styles.teamColumnRight : ""}`}
+      style={{ "--team-color": color } as React.CSSProperties}
+    >
+      <div className={`${styles.progressGroup} ${styles.picksGroup}`}>
+        <div className={styles.sectionLabel}>Picks</div>
+        <SlotRow
+          chars={picks.map(findChar).filter(Boolean)}
+          count={pickSlots}
+          type="pick"
+          team={team as "A" | "B"}
+          defeated={defeated}
+        />
       </div>
-      <div className={styles.progressGroups}>
-        <div className={styles.progressGroup}>
-          <div className={styles.sectionLabel}>
-            Picks <span>{picks.length}/{pickSlots}</span>
-          </div>
-          <SlotRow
-            chars={picks.map(findChar).filter(Boolean)}
-            count={pickSlots}
-            type="pick"
-            team={team as "A" | "B"}
-            defeated={defeated}
-          />
-        </div>
-        <div className={styles.progressGroup}>
-          <div className={styles.sectionLabel}>
-            Bans <span>{bans.length}/{banSlots}</span>
-          </div>
-          <SlotRow
-            chars={bans.map(findChar).filter(Boolean)}
-            count={banSlots}
-            type="ban"
-            team={team as "A" | "B"}
-            defeated={new Set()}
-          />
-        </div>
+      <div ref={nameContainerRef} className={styles.teamColumnName}>
+        <span ref={nameRef} title={name}>{name}</span>
+      </div>
+      <div className={`${styles.progressGroup} ${styles.bansGroup}`}>
+        <SlotRow
+          chars={bans.map(findChar).filter(Boolean)}
+          count={banSlots}
+          type="ban"
+          team={team as "A" | "B"}
+          defeated={new Set()}
+        />
+        <div className={styles.sectionLabel}>Bans</div>
       </div>
     </div>
   );
@@ -238,7 +279,10 @@ function RpsPhase({ state, onWinner }: { state: DraftState; onWinner: (w: 1 | 2)
   const t2 = state.pendingTeam2Name || "Team 2";
   return (
     <div className={styles.rpsRoot}>
-      <div className={styles.rpsTitle}>Who won RPS?</div>
+      <div className={styles.rpsTitle}>Who won Rock Paper Scissors?</div>
+      <div className={styles.rpsSubtitle}>
+        The RPS winner goes first in the draft.
+      </div>
       <div className={styles.rpsBtns}>
         <button onClick={() => onWinner(1)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>
           {t1}
@@ -257,6 +301,29 @@ export default function Draft() {
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [selectedChars, setSelectedChars] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const gridViewportRef = useRef<HTMLDivElement>(null);
+  const charGridRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const viewport = gridViewportRef.current;
+    const grid = charGridRef.current;
+    if (!viewport || !grid) return;
+
+    const fitGrid = () => {
+      const ovalWidth = Math.min(
+        viewport.clientWidth * 0.2327,
+        viewport.clientHeight * 0.1552,
+      );
+      if (ovalWidth > 0) {
+        grid.style.setProperty("--oval-w", `${ovalWidth}px`);
+      }
+    };
+
+    fitGrid();
+    const observer = new ResizeObserver(fitGrid);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const socket = io({ transports: ["websocket", "polling"] });
@@ -311,15 +378,6 @@ export default function Draft() {
       setError(getErrorMessage(error));
     }
   }, []);
-  const handleRedo = useCallback(async () => {
-    try {
-      await draftPost("/redo");
-      setSelectedChars([]);
-      setError(null);
-    } catch (error: unknown) {
-      setError(getErrorMessage(error));
-    }
-  }, []);
   const handleRestart = useCallback(async () => {
     if (!window.confirm("Restart this draft and clear all bans and picks?")) {
       return;
@@ -350,9 +408,7 @@ export default function Draft() {
     teamADefeated,
     teamBDefeated,
     currentTeam,
-    currentStep,
     canUndo,
-    canRedo,
   } = draft;
   const allChars  = ruleset.characters;
   const allBanned = new Set([...teamABans, ...teamBBans]);
@@ -369,20 +425,16 @@ export default function Draft() {
     )
     .filter(Boolean)
     .join(", ");
-  const phaseProgress =
-    phase === "ban"
-      ? `BAN ${Math.min(currentStep + 1, ruleset.banOrder.length)}/${ruleset.banOrder.length}`
-      : phase === "pick"
-        ? `PICK ${Math.min(currentStep + 1, ruleset.pickOrder.length)}/${ruleset.pickOrder.length}`
-        : "COMPLETE";
-  const actionLabel =
-    phase === "complete"
-      ? "DRAFT COMPLETE"
-      : hasSelection
-        ? `CONFIRM ${selectedCharacterNames}`
-        : phase === "ban"
-          ? "SELECT A BAN"
-          : "SELECT A CHARACTER";
+  const turnInstruction = phase === "complete"
+    ? null
+    : {
+        action: phase === "ban" ? "Ban" : "Pick",
+        progress: getTurnProgress(
+          phase === "ban" ? ruleset.banOrder : ruleset.pickOrder,
+          draft.currentStep,
+        ),
+      };
+  const confirmationLabel = `Confirm ${selectedCharacterNames}`;
 
   function getCharState(codename: string): CharState {
     if (allBanned.has(codename))          return "banned";
@@ -395,25 +447,18 @@ export default function Draft() {
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <div className={styles.headerStatus} style={{ color: actingColor }}>
-          <span className={styles.phaseBadge}>{phaseProgress}</span>
-          {phase !== "complete" && <strong>{actingName}</strong>}
+        <div className={styles.headerStatus}>
+          <button onClick={handleUndo} disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Undo</button>
         </div>
         <div className={styles.headerPrompt} aria-live="polite">
-          {hasSelection ? (
-            <button
-              onClick={handleLockIn}
-              className={`${styles.btn} ${styles.btnPrimary} ${styles.confirmButton}`}
-            >
-              {actionLabel}
-            </button>
-          ) : (
-            actionLabel
-          )}
+          {turnInstruction ? (
+            <span className={styles.headerPromptText}>
+              <strong style={{ color: actingColor }}>{actingName}:</strong>
+              {` ${turnInstruction.action} a character (${turnInstruction.progress.completed}/${turnInstruction.progress.total})`}
+            </span>
+          ) : "Draft complete"}
         </div>
         <div className={styles.headerActions}>
-          <button onClick={handleUndo} disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Undo</button>
-          <button onClick={handleRedo} disabled={!canRedo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Redo</button>
           <button onClick={handleRestart} className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}>Restart</button>
         </div>
       </div>
@@ -428,35 +473,46 @@ export default function Draft() {
             pickSlots={ruleset.teamSize}
             banSlots={bansPerTeam.a}
             allChars={allChars}
-            isActive={currentTeam === 0}
             defeated={new Set(teamADefeated)}
           />
         </div>
         <div className={styles.gridArea}>
-          <div className={styles.charGrid}>
-            {([
-              { codenames: GRID_LEFT,   colClass: `${styles.gridCol} ${styles.gridColLeft}` },
-              { codenames: GRID_CENTER, colClass: `${styles.gridCol} ${styles.gridColCenter}` },
-              { codenames: GRID_RIGHT,  colClass: `${styles.gridCol} ${styles.gridColRight}` },
-            ] as const).map(({ codenames, colClass }, colIdx) => (
-              <div key={colIdx} className={colClass}>
-                {codenames.map((codename, rowIndex) => {
-                  const c = allChars.find(ch => ch.codename === codename);
-                  if (!c) return null;
-                  const cstate = getCharState(c.codename);
-                  const canSelect = cstate === "normal" || cstate === "selected";
-                  const isClickable = (phase === "ban" || phase === "pick") && canSelect;
-                  return (
-                    <OvalCard key={c.codename} char={c} state={cstate}
-                      rowIndex={rowIndex}
-                      maxRowIndex={codenames.length - 1}
-                      onClick={isClickable ? () => handleToggleChar(c.codename) : undefined}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+          <div ref={gridViewportRef} className={styles.gridViewport}>
+            <div ref={charGridRef} className={styles.charGrid}>
+              {([
+                { codenames: GRID_LEFT,   colClass: `${styles.gridCol} ${styles.gridColLeft}` },
+                { codenames: GRID_CENTER, colClass: `${styles.gridCol} ${styles.gridColCenter}` },
+                { codenames: GRID_RIGHT,  colClass: `${styles.gridCol} ${styles.gridColRight}` },
+              ] as const).map(({ codenames, colClass }, colIdx) => (
+                <div key={colIdx} className={colClass}>
+                  {codenames.map((codename, rowIndex) => {
+                    const c = allChars.find(ch => ch.codename === codename);
+                    if (!c) return null;
+                    const cstate = getCharState(c.codename);
+                    const canSelect = cstate === "normal" || cstate === "selected";
+                    const isClickable = (phase === "ban" || phase === "pick") && canSelect;
+                    return (
+                      <OvalCard key={c.codename} char={c} state={cstate}
+                        rowIndex={rowIndex}
+                        maxRowIndex={codenames.length - 1}
+                        onClick={isClickable ? () => handleToggleChar(c.codename) : undefined}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
+          {hasSelection && (
+            <div className={styles.confirmRow}>
+              <button
+                onClick={handleLockIn}
+                className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}
+              >
+                {confirmationLabel}
+              </button>
+            </div>
+          )}
         </div>
         <div className={styles.sidebarRight}>
           <TeamColumn
@@ -467,7 +523,6 @@ export default function Draft() {
             pickSlots={ruleset.teamSize}
             banSlots={bansPerTeam.b}
             allChars={allChars}
-            isActive={currentTeam === 1}
             defeated={new Set(teamBDefeated)}
           />
         </div>

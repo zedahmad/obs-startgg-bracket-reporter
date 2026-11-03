@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useLayoutEffect, useRef } from "react";
 import type { DraftState, DraftCharacter } from "./draftTypes";
 import { io } from "socket.io-client";
 import styles from "./Draft.module.css";
@@ -35,6 +35,24 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unexpected error";
 }
 
+function getTurnProgress(order: number[], currentStep: number) {
+  const team = order[currentStep];
+  let turnStart = currentStep;
+  let turnEnd = currentStep;
+
+  while (turnStart > 0 && order[turnStart - 1] === team) {
+    turnStart -= 1;
+  }
+  while (turnEnd + 1 < order.length && order[turnEnd + 1] === team) {
+    turnEnd += 1;
+  }
+
+  return {
+    completed: currentStep - turnStart,
+    total: turnEnd - turnStart + 1,
+  };
+}
+
 // ── Character card ────────────────────────────────────────────────────────────
 
 type CharState = "normal" | "banned" | "pickedA" | "pickedB" | "selected";
@@ -43,7 +61,6 @@ interface CharCardProps {
   char: DraftCharacter;
   state: CharState;
   onClick?: () => void;
-  size?: number;
   defeated?: boolean;
 }
 
@@ -51,7 +68,6 @@ function CharCard({
   char,
   state,
   onClick,
-  size = 90,
   defeated = false,
 }: CharCardProps) {
   const isBanned      = state === "banned";
@@ -76,8 +92,6 @@ function CharCard({
       title={char.displayName}
       className={`${styles.charCard} ${isClickable ? styles.charCardClickable : ""}`}
       style={{
-        width: size,
-        height: size,
         borderColor,
         boxShadow,
         opacity: isBanned || defeated ? 0.35 : 1,
@@ -142,14 +156,12 @@ function SlotRow({
   type,
   team,
   defeated,
-  onToggleDefeated,
 }: {
   chars: DraftCharacter[];
   count: number;
   type: "pick" | "ban";
   team: "A" | "B";
   defeated: Set<string>;
-  onToggleDefeated?: (codename: string) => void;
 }) {
   const slots = Array.from({ length: count }, (_, i) => chars[i] ?? null);
   return (
@@ -159,15 +171,9 @@ function SlotRow({
             key={c.codename}
             char={c}
             state={type === "pick" ? (team === "A" ? "pickedA" : "pickedB") : "banned"}
-            size={52}
             defeated={defeated.has(c.codename)}
-            onClick={
-              type === "pick" && onToggleDefeated
-                ? () => onToggleDefeated(c.codename)
-                : undefined
-            }
           />
-        : <div key={i} className={styles.emptySlot} style={{ width: 52, height: 52 }} />
+        : <div key={i} className={styles.emptySlot} />
       )}
     </div>
   );
@@ -183,40 +189,70 @@ function TeamColumn({
   pickSlots,
   banSlots,
   allChars,
-  isActive,
   defeated,
-  onToggleDefeated,
 }: {
   name: string; color: string; picks: string[]; bans: string[];
-  pickSlots: number; banSlots: number; allChars: DraftCharacter[]; isActive: boolean;
+  pickSlots: number; banSlots: number; allChars: DraftCharacter[];
   defeated: Set<string>;
-  onToggleDefeated?: (codename: string) => void;
 }) {
   const findChar = (codename: string) => allChars.find(c => c.codename === codename)!;
   const team = color === TEAM_A_COLOR ? "A" : "B";
+  const nameContainerRef = useRef<HTMLDivElement>(null);
+  const nameRef = useRef<HTMLSpanElement>(null);
+
+  const fitTeamName = useCallback(() => {
+    const container = nameContainerRef.current;
+    const text = nameRef.current;
+    if (!container || !text) return;
+
+    text.style.setProperty("--team-name-scale", "1");
+    const containerStyle = getComputedStyle(container);
+    const availableHeight = container.clientHeight
+      - Number.parseFloat(containerStyle.paddingTop || "0")
+      - Number.parseFloat(containerStyle.paddingBottom || "0");
+
+    if (availableHeight <= 0 || text.scrollHeight <= availableHeight) return;
+
+    const fittedScale = Math.max(0.35, availableHeight / text.scrollHeight);
+    text.style.setProperty("--team-name-scale", `${fittedScale}`);
+  }, []);
+
+  useLayoutEffect(() => {
+    fitTeamName();
+    const observer = new ResizeObserver(fitTeamName);
+    if (nameContainerRef.current) observer.observe(nameContainerRef.current);
+    document.fonts?.ready.then(fitTeamName);
+    return () => observer.disconnect();
+  }, [fitTeamName, name]);
+
   return (
-    <div className={`${styles.teamColumn} ${isActive ? styles.teamColumnActive : ""}`} style={{ "--team-color": color } as React.CSSProperties}>
-      <div className={styles.teamColumnName}>
-        {name}
-        {isActive && <span className={styles.turnBadge}>YOUR TURN</span>}
+    <div
+      className={`${styles.teamColumn} ${team === "B" ? styles.teamColumnRight : ""}`}
+      style={{ "--team-color": color } as React.CSSProperties}
+    >
+      <div className={`${styles.progressGroup} ${styles.picksGroup}`}>
+        <div className={styles.sectionLabel}>Picks</div>
+        <SlotRow
+          chars={picks.map(findChar).filter(Boolean)}
+          count={pickSlots}
+          type="pick"
+          team={team as "A" | "B"}
+          defeated={defeated}
+        />
       </div>
-      <div className={styles.sectionLabel}>Picks</div>
-      <SlotRow
-        chars={picks.map(findChar).filter(Boolean)}
-        count={pickSlots}
-        type="pick"
-        team={team as "A" | "B"}
-        defeated={defeated}
-        onToggleDefeated={onToggleDefeated}
-      />
-      <div className={styles.sectionLabel}>Bans</div>
-      <SlotRow
-        chars={bans.map(findChar).filter(Boolean)}
-        count={banSlots}
-        type="ban"
-        team={team as "A" | "B"}
-        defeated={new Set()}
-      />
+      <div ref={nameContainerRef} className={styles.teamColumnName}>
+        <span ref={nameRef} title={name}>{name}</span>
+      </div>
+      <div className={`${styles.progressGroup} ${styles.bansGroup}`}>
+        <SlotRow
+          chars={bans.map(findChar).filter(Boolean)}
+          count={banSlots}
+          type="ban"
+          team={team as "A" | "B"}
+          defeated={new Set()}
+        />
+        <div className={styles.sectionLabel}>Bans</div>
+      </div>
     </div>
   );
 }
@@ -244,10 +280,16 @@ function RpsPhase({ state, onWinner }: { state: DraftState; onWinner: (w: 1 | 2)
   return (
     <div className={styles.rpsRoot}>
       <div className={styles.rpsTitle}>Who won Rock Paper Scissors?</div>
-      <div className={styles.rpsSubtitle}>The RPS winner goes first in the draft.</div>
+      <div className={styles.rpsSubtitle}>
+        The RPS winner goes first in the draft.
+      </div>
       <div className={styles.rpsBtns}>
-        <button onClick={() => onWinner(1)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>{t1}</button>
-        <button onClick={() => onWinner(2)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_B_COLOR } as React.CSSProperties}>{t2}</button>
+        <button onClick={() => onWinner(1)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>
+          {t1}
+        </button>
+        <button onClick={() => onWinner(2)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_B_COLOR } as React.CSSProperties}>
+          {t2}
+        </button>
       </div>
     </div>
   );
@@ -255,24 +297,33 @@ function RpsPhase({ state, onWinner }: { state: DraftState; onWinner: (w: 1 | 2)
 
 // ── Main Draft Component ─────────────────────────────────────────────────────
 
-/** How many consecutive actions the current team has from a given step in the order array. */
-function getTurnLength(order: number[], step: number, team: number): number {
-  let n = 0;
-  for (let i = step; i < order.length && order[i] === team; i++) n++;
-  return n;
-}
-
-/** Walk backwards to find where the current team's consecutive run started. */
-function getTurnStartStep(order: number[], step: number, team: number): number {
-  let s = step;
-  while (s > 0 && order[s - 1] === team) s--;
-  return s;
-}
-
 export default function Draft() {
   const [draft, setDraft] = useState<DraftState | null>(null);
   const [selectedChars, setSelectedChars] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const gridViewportRef = useRef<HTMLDivElement>(null);
+  const charGridRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const viewport = gridViewportRef.current;
+    const grid = charGridRef.current;
+    if (!viewport || !grid) return;
+
+    const fitGrid = () => {
+      const ovalWidth = Math.min(
+        viewport.clientWidth * 0.2327,
+        viewport.clientHeight * 0.1552,
+      );
+      if (ovalWidth > 0) {
+        grid.style.setProperty("--oval-w", `${ovalWidth}px`);
+      }
+    };
+
+    fitGrid();
+    const observer = new ResizeObserver(fitGrid);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const socket = io({ transports: ["websocket", "polling"] });
@@ -327,16 +378,10 @@ export default function Draft() {
       setError(getErrorMessage(error));
     }
   }, []);
-  const handleRedo = useCallback(async () => {
-    try {
-      await draftPost("/redo");
-      setSelectedChars([]);
-      setError(null);
-    } catch (error: unknown) {
-      setError(getErrorMessage(error));
-    }
-  }, []);
   const handleRestart = useCallback(async () => {
+    if (!window.confirm("Restart this draft and clear all bans and picks?")) {
+      return;
+    }
     try {
       await draftPost("/restart");
       setSelectedChars([]);
@@ -345,22 +390,6 @@ export default function Draft() {
       setError(getErrorMessage(error));
     }
   }, []);
-  const handleToggleDefeated = useCallback(async (
-    team: 0 | 1,
-    codename: string,
-  ) => {
-    try {
-      const result = await draftPost<{ draft: DraftState }>(
-        "/defeat",
-        { team, codename },
-      );
-      setDraft(result.draft);
-      setError(null);
-    } catch (error: unknown) {
-      setError(getErrorMessage(error));
-    }
-  }, []);
-
   if (!draft) return <div className={styles.connecting}>Connecting…</div>;
 
   const { phase, ruleset } = draft;
@@ -379,35 +408,33 @@ export default function Draft() {
     teamADefeated,
     teamBDefeated,
     currentTeam,
-    currentStep,
     canUndo,
-    canRedo,
   } = draft;
   const allChars  = ruleset.characters;
   const allBanned = new Set([...teamABans, ...teamBBans]);
   const bansPerTeam = { a: 0, b: 0 };
   ruleset.banOrder.forEach(t => t === 0 ? bansPerTeam.a++ : bansPerTeam.b++);
 
-  const order = phase === "ban" ? ruleset.banOrder : phase === "pick" ? ruleset.pickOrder : [];
   const hasSelection = selectedChars.length > 0;
-
-  // Compute position within multi-char turns for the prompt (e.g. "ban 2 of 2")
-  const turnStart = (phase === "ban" || phase === "pick") && currentTeam !== null
-    ? getTurnStartStep(order, currentStep, currentTeam) : 0;
-  const totalTurnLength = (phase === "ban" || phase === "pick") && currentTeam !== null
-    ? getTurnLength(order, turnStart, currentTeam) : 0;
-  const turnPos   = currentStep - turnStart + 1;
-  const posLabel  = totalTurnLength > 1 ? ` (${turnPos} of ${totalTurnLength})` : "";
 
   const actingColor = currentTeam === 0 ? TEAM_A_COLOR : currentTeam === 1 ? TEAM_B_COLOR : "#888";
   const actingName  = currentTeam === 0 ? teamAName    : currentTeam === 1 ? teamBName    : "";
-  const prompt = phase === "complete"
-    ? "Draft complete — click a drafted character to toggle defeated"
-    : hasSelection
-      ? `${actingName}: Lock in ${selectedChars.map(cn => allChars.find(c => c.codename === cn)?.displayName).join(", ")}`
-      : phase === "ban"
-        ? `${actingName}: Select a ban${posLabel}`
-        : `${actingName}: Select a character${posLabel}`;
+  const selectedCharacterNames = selectedChars
+    .map((codename) =>
+      allChars.find((character) => character.codename === codename)?.displayName
+    )
+    .filter(Boolean)
+    .join(", ");
+  const turnInstruction = phase === "complete"
+    ? null
+    : {
+        action: phase === "ban" ? "Ban" : "Pick",
+        progress: getTurnProgress(
+          phase === "ban" ? ruleset.banOrder : ruleset.pickOrder,
+          draft.currentStep,
+        ),
+      };
+  const confirmationLabel = `Confirm ${selectedCharacterNames}`;
 
   function getCharState(codename: string): CharState {
     if (allBanned.has(codename))          return "banned";
@@ -420,16 +447,19 @@ export default function Draft() {
   return (
     <div className={styles.root}>
       <div className={styles.header}>
-        <div className={styles.headerMatchup}>
-          <span style={{ color: TEAM_A_COLOR }}>{teamAName}</span>
-          <span style={{ color: "#444", margin: "0 8px" }}>vs</span>
-          <span style={{ color: TEAM_B_COLOR }}>{teamBName}</span>
+        <div className={styles.headerStatus}>
+          <button onClick={handleUndo} disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>Undo</button>
         </div>
-        <div className={styles.headerPrompt} style={{ color: actingColor }}>{prompt}</div>
+        <div className={styles.headerPrompt} aria-live="polite">
+          {turnInstruction ? (
+            <span className={styles.headerPromptText}>
+              <strong style={{ color: actingColor }}>{actingName}:</strong>
+              {` ${turnInstruction.action} a character (${turnInstruction.progress.completed}/${turnInstruction.progress.total})`}
+            </span>
+          ) : "Draft complete"}
+        </div>
         <div className={styles.headerActions}>
-          <button onClick={handleUndo}    disabled={!canUndo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>↩ Undo</button>
-          <button onClick={handleRedo}    disabled={!canRedo} className={`${styles.btn} ${styles.btnGhost} ${styles.btnSmall}`}>↪ Redo</button>
-          <button onClick={handleRestart}                     className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}>↺ Restart</button>
+          <button onClick={handleRestart} className={`${styles.btn} ${styles.btnDanger} ${styles.btnSmall}`}>Restart</button>
         </div>
       </div>
 
@@ -443,44 +473,43 @@ export default function Draft() {
             pickSlots={ruleset.teamSize}
             banSlots={bansPerTeam.a}
             allChars={allChars}
-            isActive={currentTeam === 0}
             defeated={new Set(teamADefeated)}
-            onToggleDefeated={
-              phase === "complete"
-                ? (codename) => handleToggleDefeated(0, codename)
-                : undefined
-            }
           />
         </div>
         <div className={styles.gridArea}>
-          <div className={styles.charGrid}>
-            {([
-              { codenames: GRID_LEFT,   colClass: `${styles.gridCol} ${styles.gridColLeft}` },
-              { codenames: GRID_CENTER, colClass: `${styles.gridCol} ${styles.gridColCenter}` },
-              { codenames: GRID_RIGHT,  colClass: `${styles.gridCol} ${styles.gridColRight}` },
-            ] as const).map(({ codenames, colClass }, colIdx) => (
-              <div key={colIdx} className={colClass}>
-                {codenames.map((codename, rowIndex) => {
-                  const c = allChars.find(ch => ch.codename === codename);
-                  if (!c) return null;
-                  const cstate = getCharState(c.codename);
-                  const canSelect = cstate === "normal" || cstate === "selected";
-                  const isClickable = (phase === "ban" || phase === "pick") && canSelect;
-                  return (
-                    <OvalCard key={c.codename} char={c} state={cstate}
-                      rowIndex={rowIndex}
-                      maxRowIndex={codenames.length - 1}
-                      onClick={isClickable ? () => handleToggleChar(c.codename) : undefined}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+          <div ref={gridViewportRef} className={styles.gridViewport}>
+            <div ref={charGridRef} className={styles.charGrid}>
+              {([
+                { codenames: GRID_LEFT,   colClass: `${styles.gridCol} ${styles.gridColLeft}` },
+                { codenames: GRID_CENTER, colClass: `${styles.gridCol} ${styles.gridColCenter}` },
+                { codenames: GRID_RIGHT,  colClass: `${styles.gridCol} ${styles.gridColRight}` },
+              ] as const).map(({ codenames, colClass }, colIdx) => (
+                <div key={colIdx} className={colClass}>
+                  {codenames.map((codename, rowIndex) => {
+                    const c = allChars.find(ch => ch.codename === codename);
+                    if (!c) return null;
+                    const cstate = getCharState(c.codename);
+                    const canSelect = cstate === "normal" || cstate === "selected";
+                    const isClickable = (phase === "ban" || phase === "pick") && canSelect;
+                    return (
+                      <OvalCard key={c.codename} char={c} state={cstate}
+                        rowIndex={rowIndex}
+                        maxRowIndex={codenames.length - 1}
+                        onClick={isClickable ? () => handleToggleChar(c.codename) : undefined}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
           </div>
           {hasSelection && (
             <div className={styles.confirmRow}>
-              <button onClick={handleLockIn} className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}>
-                Lock in {selectedChars.map(cn => allChars.find(c => c.codename === cn)?.displayName).join(" + ")}
+              <button
+                onClick={handleLockIn}
+                className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}
+              >
+                {confirmationLabel}
               </button>
             </div>
           )}
@@ -494,13 +523,7 @@ export default function Draft() {
             pickSlots={ruleset.teamSize}
             banSlots={bansPerTeam.b}
             allChars={allChars}
-            isActive={currentTeam === 1}
             defeated={new Set(teamBDefeated)}
-            onToggleDefeated={
-              phase === "complete"
-                ? (codename) => handleToggleDefeated(1, codename)
-                : undefined
-            }
           />
         </div>
       </div>

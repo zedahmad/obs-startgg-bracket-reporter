@@ -25,6 +25,33 @@ const knownChars = new Map([
 const PICK_BASE = { h: 329, maxWidthRatio: 1, overlap: -110 };
 const BAN_BASE  = { h: 188, maxWidthRatio: 1, overlap: -30 };
 
+function fitTeamName(element) {
+  const parent = element.parentElement;
+  const parentStyle = parent ? getComputedStyle(parent) : null;
+  const availableWidth = parent
+    ? parent.clientWidth
+      - Number.parseFloat(parentStyle?.paddingLeft || '0')
+      - Number.parseFloat(parentStyle?.paddingRight || '0')
+    : 0;
+
+  element.style.transform = 'scaleX(1)';
+
+  if (
+    !element.textContent ||
+    availableWidth <= 0 ||
+    element.scrollWidth <= availableWidth
+  ) return;
+
+  const fittedScale = Math.max(0.35, availableWidth / element.scrollWidth);
+  element.style.transform = `scaleX(${fittedScale})`;
+}
+
+function fitAllTeamNames() {
+  fitTeamName(nameA);
+  fitTeamName(nameB);
+  fitTeamName(turnIndicator);
+}
+
 /**
  * Render character slots into a container.
  *
@@ -173,4 +200,11 @@ socket.on('draft:update', (state) => {
   } else {
     turnIndicator.textContent = '';
   }
+
+  requestAnimationFrame(fitAllTeamNames);
 });
+
+window.addEventListener('resize', fitAllTeamNames);
+if (document.fonts?.ready) {
+  document.fonts.ready.then(fitAllTeamNames);
+}

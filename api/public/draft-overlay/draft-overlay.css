@@ -13,7 +13,7 @@
 body {
   background: #222;
   overflow: hidden;
-  font-family: 'Segoe UI', Arial, sans-serif;
+  font-family: "Barlow Condensed", sans-serif;
 }
 
 #overlay {
@@ -22,9 +22,10 @@ body {
   bottom: 0;
   left: 0;
   right: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 44fr) minmax(0, 12fr) minmax(0, 44fr);
   align-items: stretch;
-  justify-content: space-between;
+  overflow: hidden;
   transition: opacity 0.4s ease;
 }
 
@@ -36,10 +37,10 @@ body {
 /* ── Team panels ────────────────────────────────────────────────────────── */
 
 .team-panel {
-  flex: 1;
   display: flex;
   flex-direction: column;
-  max-width: 44%;
+  width: 100%;
+  min-width: 0;
   /* No panel-level background — gradient is only behind the section labels */
 }
 
@@ -54,15 +55,36 @@ body {
 .team-header {
   display: flex;
   align-items: center;
+  width: 100%;
+  min-width: 0;
   gap: 15px;
   padding: 36px 48px 24px;
 }
 
+.team-name-slot {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+#panel-b .team-name-slot {
+  justify-content: flex-end;
+}
+
 .team-name {
+  display: inline-block;
+  flex-shrink: 0;
   font-size: 42px;
-  font-weight: 800;
+  font-weight: 1000;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  transform-origin: left center;
+}
+
+#panel-b .team-name {
+  transform-origin: right center;
 }
 
 #panel-a .team-name { color: #ff7a6d; }
@@ -70,9 +92,9 @@ body {
 
 .first-pick-badge {
   font-size: 17px;
-  font-weight: 700;
+  font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 0.08em;
   color: #fff;
   background: #1a1040;
   border: 1px solid rgba(255,255,255,0.3);
@@ -231,9 +253,9 @@ body {
   display: flex;
   align-items: center;
   font-size: 33px;
-  font-weight: 800;
+  font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 4px;
+  letter-spacing: 0.08em;
   color: rgba(255,255,255,0.7);
   padding: 0 40px;
   pointer-events: none;
@@ -262,11 +284,12 @@ body {
 /* ── Center status ──────────────────────────────────────────────────────── */
 
 .center-status {
-  flex-shrink: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-end;
+  min-width: 0;
+  overflow: hidden;
   padding: 0 24px 36px;
   gap: 8px;
 }
@@ -277,17 +300,22 @@ body {
   border-radius: 20px;
   padding: 6px 20px;
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 1000;
   color: #fff;
   text-transform: uppercase;
-  letter-spacing: 2px;
+  letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
 .turn-indicator {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
   font-size: 13px;
+  font-weight: 800;
   color: #ccc;
   white-space: nowrap;
   min-height: 20px;
   text-align: center;
+  transform-origin: center;
 }

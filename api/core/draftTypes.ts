@@ -22,6 +22,7 @@ export interface DraftStagingState {
 }
 
 export interface DraftState {
+  matchId: string | null;
   phase: "idle" | "rps" | "ban" | "pick" | "complete";
   pendingTeam1Name: string;
   pendingTeam2Name: string;
@@ -31,6 +32,8 @@ export interface DraftState {
   teamBBans: string[];
   teamAPicks: string[];
   teamBPicks: string[];
+  teamADefeated: string[];
+  teamBDefeated: string[];
   currentStep: number;
   currentTeam: 0 | 1 | null;
   rpsWinner: 1 | 2 | null;
@@ -40,4 +43,3 @@ export interface DraftState {
   /** Characters selected but not yet confirmed. Shown at 30% opacity on overlay. */
   staging: DraftStagingState | null;
 }
-

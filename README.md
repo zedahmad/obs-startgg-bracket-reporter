@@ -6,9 +6,10 @@ A tournament management platform for livestreamed events. Replaces TournamentStr
 
 - **Bracket Manager** — Electron desktop app (React/Vite) for managing tournament sets, including off-stream matches, tracking scores, and submitting results to start.gg.
 - **Offline Scoreboard Mode** — Enter two player names and use the score controls, OBS overlay, and Stream Deck endpoints without a start.gg tournament.
-- **Scoreboard Overlay** — Browser source for OBS; auto-updates via WebSocket when scores or players change, with independently styled sponsor tags and optional player country flags.
+- **Scoreboard Overlay** — Browser source for OBS; auto-updates via WebSocket when scores or players change, with independently styled sponsor tags, optional player country flags, and compact character-draft rails.
 - **Scoreboard Editor** — Opens the live scoreboard renderer in a dedicated tab with draggable element bounds, mirrored player-card geometry by default, and an overlay containing all appearance settings.
-- **Character Draft Overlay** — Browser source for OBS; displays a live ban/pick draft for team-format matches.
+- **Character Draft Integration** — Launch a draft from a bracket/offline match, use its entrants as team names, mark drafted characters defeated, and automatically score the opposing team.
+- **Character Draft Overlay** — Browser source for OBS; displays the live ban/pick draft and greys out defeated characters.
 - **Stream Deck Integration** — HTTP endpoints (GET or POST) for hardware controllers to adjust scores and toggle scoreboard visibility.
 - **Multi-instance Sync** — All open bracket manager windows stay in sync in real time via Socket.io; the backend is the single source of truth.
 
@@ -106,7 +107,7 @@ without `Setup` for portable use.
 
 On launch, choose start.gg tournament mode or offline mode. Tournament mode accepts a numeric tournament ID, slug (for example `tournament/my-event`), or tournament URL. The API token and tournament identifier are persisted to `api/config.json`.
 
-To configure the character draft ruleset (ban/pick order, roster), edit `api/config/ruleset.json`. See [Ruleset Format](#ruleset-format) below.
+Start a character draft from a match in the main dashboard. The app selects and starts that match and keeps one active match-linked draft at a time. The tablet-facing draft controller is opened separately from the manager when needed. To configure the ruleset (ban/pick order, roster), edit `api/config/ruleset.json`. See [Ruleset Format](#ruleset-format) below.
 
 ---
 
@@ -174,15 +175,16 @@ All Stream Deck endpoints accept **GET or POST** and target the one match curren
 | Method | Path | Body | Description |
 |---|---|---|---|
 | `GET` | `/api/draft` | — | Current draft state |
-| `POST` | `/api/draft/start` | `{ team1Name, team2Name }` | Start a new draft (enters RPS phase) |
+| `POST` | `/api/draft/start` | `{ matchId, streamId? }` | Select/start the match, derive team names from its entrants, and replace the active draft |
 | `POST` | `/api/draft/rps-winner` | `{ winner: 1 \| 2 }` | Record RPS winner; begins ban phase |
 | `POST` | `/api/draft/stage` | `{ codenames, action }` | Preview the current selection on the overlay |
 | `POST` | `/api/draft/lock-in` | `{ codenames }` | Confirm the current selection |
 | `POST` | `/api/draft/ban` | `{ codename }` | Ban a character |
 | `POST` | `/api/draft/pick` | `{ codename }` | Pick a character |
+| `POST` | `/api/draft/defeat` | `{ team: 0 \| 1, codename }` | Toggle a drafted character defeated after the draft; increments/decrements the opposing score |
 | `POST` | `/api/draft/undo` | — | Undo last ban/pick |
 | `POST` | `/api/draft/redo` | — | Redo last undone action |
-| `POST` | `/api/draft/restart` | — | Reset draft to team name entry |
+| `POST` | `/api/draft/restart` | — | Clear the active draft; start the next draft from the dashboard |
 
 ---
 
@@ -210,7 +212,7 @@ idle → live → saved → complete
 - **saved** — result recorded locally, not yet submitted to start.gg
 - **complete** — final result submitted; cannot be modified
 
-Scoreboard selection is independent from match status and start.gg stream metadata. The backend preserves the locally selected scoreboard match, scores, and status across start.gg refreshes. Selecting a match for the scoreboard starts it immediately; other matches can be started, scored, and submitted without changing the overlay.
+Scoreboard selection is independent from match status and start.gg stream metadata. The backend preserves the locally selected scoreboard match, scores, and status across start.gg refreshes. Selecting a match for the scoreboard starts it immediately; other matches can be started, scored, and submitted without changing the overlay. Starting a character draft also selects and starts its linked match. After the draft, toggling one of a team's drafted characters as defeated updates the opposing team's score and greys that character on both OBS overlays.
 
 ---
 

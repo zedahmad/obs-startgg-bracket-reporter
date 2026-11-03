@@ -3,6 +3,7 @@ import { getSettingsChanges, mergeSettingsChanges } from "./settingsChanges";
 import { applyPlayerCardSymmetry } from "./scoreboardSymmetry";
 import type {
   BackgroundSettings,
+  CharacterRailSettings,
   PlayerBlockSettings,
   ScoreboardSettings,
 } from "./scoreboardSettings";
@@ -260,6 +261,60 @@ function PlayerBlockEditor({
           onChange({ ...value, scoreBackground }, options)
         }
       />
+    </section>
+  );
+}
+
+type CharacterRailEditorProps = {
+  idPrefix: string;
+  title: string;
+  value: CharacterRailSettings;
+  defaultValue: CharacterRailSettings;
+  onChange: (value: CharacterRailSettings) => void;
+};
+
+function CharacterRailEditor({
+  idPrefix,
+  title,
+  value,
+  defaultValue,
+  onChange,
+}: CharacterRailEditorProps) {
+  return (
+    <section className="settings-section">
+      <SectionHeading
+        eyebrow="Character draft element"
+        title={title}
+        enabled={value.enabled}
+        onEnabledChange={(enabled) => onChange({ ...value, enabled })}
+        onRestore={() => onChange(structuredClone(defaultValue))}
+      />
+      <div className="settings-grid">
+        <NumberField
+          id={`${idPrefix}-x`}
+          label="X"
+          value={value.x}
+          onChange={(x) => onChange({ ...value, x })}
+        />
+        <NumberField
+          id={`${idPrefix}-y`}
+          label="Y"
+          value={value.y}
+          onChange={(y) => onChange({ ...value, y })}
+        />
+        <NumberField
+          id={`${idPrefix}-width`}
+          label="Width"
+          value={value.width}
+          onChange={(width) => onChange({ ...value, width })}
+        />
+        <NumberField
+          id={`${idPrefix}-height`}
+          label="Height"
+          value={value.height}
+          onChange={(height) => onChange({ ...value, height })}
+        />
+      </div>
     </section>
   );
 }
@@ -760,7 +815,8 @@ export default function SettingsPane({
               </div>
               <p className="settings-help-copy">
                 When enabled, Player 2 mirrors Player 1 across the canvas while
-                keeping its own background styling.
+                keeping its own background styling. Character draft rails are
+                mirrored at the same time.
               </p>
             </section>
 
@@ -794,6 +850,40 @@ export default function SettingsPane({
                     },
                     options,
                   )
+                }
+              />
+            )}
+
+            <CharacterRailEditor
+              idPrefix="player-one-characters"
+              title="Player 1 drafted characters"
+              value={draft.elements.player1Characters}
+              defaultValue={defaults.elements.player1Characters}
+              onChange={(player1Characters) =>
+                applyDraft({
+                  ...draft,
+                  elements: {
+                    ...draft.elements,
+                    player1Characters,
+                  },
+                })
+              }
+            />
+
+            {!draft.layout.mirrorPlayerCards && (
+              <CharacterRailEditor
+                idPrefix="player-two-characters"
+                title="Player 2 drafted characters"
+                value={draft.elements.player2Characters}
+                defaultValue={defaults.elements.player2Characters}
+                onChange={(player2Characters) =>
+                  applyDraft({
+                    ...draft,
+                    elements: {
+                      ...draft.elements,
+                      player2Characters,
+                    },
+                  })
                 }
               />
             )}

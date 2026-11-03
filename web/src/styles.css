@@ -767,6 +767,20 @@ input[type="color"] {
   background: rgba(34, 197, 94, 0.12);
 }
 
+.draft-indicator {
+  overflow: hidden;
+  max-width: min(240px, 100%);
+  padding: 5px 9px;
+  border: 1px solid rgba(217, 70, 239, 0.32);
+  border-radius: 999px;
+  color: #f5d0fe;
+  background: rgba(192, 38, 211, 0.12);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .queue-match-controls {
   display: grid;
   gap: 14px;
@@ -909,6 +923,117 @@ input[type="color"] {
 
 .span-2 {
   grid-column: 1 / -1;
+}
+
+.draft-launch-button {
+  width: 100%;
+}
+
+.draft-manager-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid rgba(217, 70, 239, 0.28);
+  border-radius: 20px;
+  background: rgba(88, 28, 135, 0.12);
+}
+
+.draft-manager-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.draft-manager-header h3 {
+  margin-top: 3px;
+}
+
+.draft-manager-teams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.draft-team-controls {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(2, 6, 23, 0.42);
+}
+
+.draft-team-controls > strong {
+  display: block;
+  overflow: hidden;
+  margin-bottom: 10px;
+  color: var(--muted-strong);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-character-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.draft-character-button {
+  min-width: 0;
+  padding: 5px;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  color: var(--muted-strong);
+  background: rgba(15, 23, 42, 0.84);
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    filter 150ms ease,
+    opacity 150ms ease;
+}
+
+.draft-character-button:hover:not(:disabled) {
+  border-color: rgba(217, 70, 239, 0.72);
+}
+
+.draft-character-button:disabled {
+  cursor: default;
+}
+
+.draft-character-button.is-defeated {
+  opacity: 0.42;
+  filter: grayscale(1) brightness(0.58);
+}
+
+.draft-character-button img {
+  display: block;
+  width: 100%;
+  height: 56px;
+  object-fit: contain;
+}
+
+.draft-character-button span {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.draft-character-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.draft-manager-help {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.5;
 }
 
 /* Score controls */
@@ -1402,6 +1527,11 @@ input[type="color"] {
 
   .hero-actions {
     width: 100%;
+  }
+
+  .draft-manager-header {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .hero-actions .button {

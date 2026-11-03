@@ -80,6 +80,7 @@ function getAppState() {
     mode: appMode,
     matchesData: store.getState(),
     streamsData: streams,
+    draftData: draftStore.getState(),
   };
 }
 
@@ -95,6 +96,15 @@ function log(message: string) {
 }
 
 const streamAssignmentQueues = new Map<string, Promise<void>>();
+
+class RequestError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
 
 function queueStartggStreamAssignment(matchId: string, streamId: string) {
   const previous = streamAssignmentQueues.get(matchId) ?? Promise.resolve();
@@ -117,6 +127,77 @@ function queueStartggStreamAssignment(matchId: string, streamId: string) {
       }
     });
   streamAssignmentQueues.set(matchId, next);
+}
+
+function prepareScoreboardMatch(matchId: string, streamId?: unknown) {
+  const match = store.getState()[matchId];
+  if (!match) {
+    throw new RequestError(404, "Match not found");
+  }
+
+  const selectedStreamId =
+    typeof streamId === "string" && streamId.trim() ? streamId.trim() : null;
+  if (
+    selectedStreamId &&
+    !streams.some((stream) => stream.id === selectedStreamId)
+  ) {
+    throw new RequestError(400, "Invalid streamId");
+  }
+  if (match.status === "complete") {
+    throw new RequestError(
+      409,
+      `Match cannot be shown from status: ${match.status}`,
+    );
+  }
+
+  store.dispatch({
+    type: "SCOREBOARD_MATCH_SELECTED",
+    matchId,
+  });
+
+  if (match.status === "idle") {
+    store.dispatch({
+      type: "MATCH_STARTED",
+      matchId,
+    });
+    void startSetOnStartGG(matchId).catch((err: any) => {
+      log(`Failed to sync in-progress state to start.gg: ${err.response ?? err}`);
+    });
+  }
+
+  if (selectedStreamId && match.startggStreamId !== selectedStreamId) {
+    queueStartggStreamAssignment(matchId, selectedStreamId);
+  }
+
+  return store.getState()[matchId];
+}
+
+function adjustMatchScore(
+  matchId: string,
+  player: 1 | 2,
+  delta: -1 | 1,
+) {
+  const match = store.getState()[matchId];
+  if (!match) {
+    throw new RequestError(404, "Match not found");
+  }
+  if (match.status === "complete") {
+    throw new RequestError(
+      409,
+      `Cannot update score from status: ${match.status}`,
+    );
+  }
+
+  store.dispatch({
+    type: "SCORE_UPDATED",
+    matchId,
+    score1:
+      player === 1 ? Math.max(0, match.score1 + delta) : match.score1,
+    score2:
+      player === 2 ? Math.max(0, match.score2 + delta) : match.score2,
+  });
+
+  return store.getState()[matchId];
 }
 
 app.use(cors({ origin: true }));
@@ -344,7 +425,10 @@ app.use("/streamdeck", streamDeckRouter);
 
 const isProd = (process as any).pkg || process.env.IS_PROD === "true";
 const webDistPath = path.join(__dirname, "../../web/dist");
-const draftRouter = createDraftRouter(io);
+const draftRouter = createDraftRouter(io, {
+  prepareMatch: prepareScoreboardMatch,
+  adjustScore: adjustMatchScore,
+});
 
 app.use("/api/draft", draftRouter);
 
@@ -562,52 +646,14 @@ app.post("/assign", (req, res) => {
     });
   }
 
-  const match = store.getState()[matchId];
-
-  if (!match) {
-    return res.status(404).json({
-      error: "Match not found",
-    });
+  try {
+    return res.json(prepareScoreboardMatch(matchId, streamId));
+  } catch (error) {
+    if (error instanceof RequestError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    throw error;
   }
-
-  const selectedStreamId =
-    typeof streamId === "string" && streamId.trim() ? streamId.trim() : null;
-  const streamExists =
-    !selectedStreamId ||
-    streams.some((stream) => stream.id === selectedStreamId);
-
-  if (!streamExists) {
-    return res.status(400).json({
-      error: "Invalid streamId",
-    });
-  }
-
-  if (match.status === "complete") {
-    return res.status(409).json({
-      error: `Match cannot be shown from status: ${match.status}`,
-    });
-  }
-
-  store.dispatch({
-    type: "SCOREBOARD_MATCH_SELECTED",
-    matchId,
-  });
-
-  if (match.status === "idle") {
-    store.dispatch({
-      type: "MATCH_STARTED",
-      matchId,
-    });
-    void startSetOnStartGG(matchId).catch((err: any) => {
-      log(`Failed to sync in-progress state to start.gg: ${err.response ?? err}`);
-    });
-  }
-
-  if (selectedStreamId && match.startggStreamId !== selectedStreamId) {
-    queueStartggStreamAssignment(matchId, selectedStreamId);
-  }
-
-  return res.json(store.getState()[matchId]);
 });
 
 app.post("/unassign", (req, res) => {
@@ -702,26 +748,14 @@ app.post("/updateScoreDelta", (req, res) => {
     });
   }
 
-  const match = store.getState()[matchId];
-  if (!match) {
-    return res.status(404).json({ error: "Match not found" });
+  try {
+    return res.json(adjustMatchScore(matchId, player, delta));
+  } catch (error) {
+    if (error instanceof RequestError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    throw error;
   }
-  if (match.status === "complete") {
-    return res.status(409).json({
-      error: `Cannot update score from status: ${match.status}`,
-    });
-  }
-
-  store.dispatch({
-    type: "SCORE_UPDATED",
-    matchId,
-    score1:
-      player === 1 ? Math.max(0, match.score1 + delta) : match.score1,
-    score2:
-      player === 2 ? Math.max(0, match.score2 + delta) : match.score2,
-  });
-
-  return res.json(store.getState()[matchId]);
 });
 
 app.post("/resetScore", (req, res) => {

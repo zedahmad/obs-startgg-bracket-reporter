@@ -3,8 +3,8 @@ import type { DraftState, DraftCharacter } from "./draftTypes";
 import { io } from "socket.io-client";
 import styles from "./Draft.module.css";
 
-const API_BASE = `${window.location.protocol}//${window.location.hostname}:3001`;
-const DRAFT_API_BASE = `${API_BASE}/api/draft`;
+const API_BASE = window.location.origin;
+const DRAFT_API_BASE = "/api/draft";
 const TEAM_A_COLOR = "#ff7a6d";
 const TEAM_B_COLOR = "#29b6f6";
 
@@ -15,7 +15,10 @@ const GRID_RIGHT  = ["Ryu",    "Oro",    "Dudley",   "Elena",  "Hugo",   "Ken"];
 
 // ── API helpers ──────────────────────────────────────────────────────────────
 
-async function draftPost(endpoint: string, body?: object): Promise<DraftState> {
+async function draftPost<T = DraftState>(
+  endpoint: string,
+  body?: object,
+): Promise<T> {
   const res = await fetch(`${DRAFT_API_BASE}${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -41,15 +44,21 @@ interface CharCardProps {
   state: CharState;
   onClick?: () => void;
   size?: number;
+  defeated?: boolean;
 }
 
-function CharCard({ char, state, onClick, size = 90 }: CharCardProps) {
+function CharCard({
+  char,
+  state,
+  onClick,
+  size = 90,
+  defeated = false,
+}: CharCardProps) {
   const isBanned      = state === "banned";
   const isPickedA     = state === "pickedA";
   const isPickedB     = state === "pickedB";
   const isSelected    = state === "selected";
-  const isUnavailable = isBanned || isPickedA || isPickedB;
-  const isClickable   = !isUnavailable && !!onClick;
+  const isClickable   = Boolean(onClick);
 
   const borderColor = isSelected ? "#fff"
     : isPickedA ? TEAM_A_COLOR
@@ -66,7 +75,14 @@ function CharCard({ char, state, onClick, size = 90 }: CharCardProps) {
       onClick={isClickable ? onClick : undefined}
       title={char.displayName}
       className={`${styles.charCard} ${isClickable ? styles.charCardClickable : ""}`}
-      style={{ width: size, height: size, borderColor, boxShadow, opacity: isBanned ? 0.35 : 1, filter: isBanned ? "grayscale(1)" : "none" }}
+      style={{
+        width: size,
+        height: size,
+        borderColor,
+        boxShadow,
+        opacity: isBanned || defeated ? 0.35 : 1,
+        filter: isBanned || defeated ? "grayscale(1) brightness(0.6)" : "none",
+      }}
     >
       <img src={`${API_BASE}${char.imagePath}`} alt={char.displayName} draggable={false} className={styles.charCardImg} />
       <div className={styles.charCardLabel}>{char.displayName}</div>
@@ -120,12 +136,37 @@ function OvalCard({ char, state, onClick, rowIndex = 0, maxRowIndex = 0 }: OvalC
 
 // ── Slot row ──────────────────────────────────────────────────────────────────
 
-function SlotRow({ chars, count, type, team }: { chars: DraftCharacter[]; count: number; type: "pick" | "ban"; team: "A" | "B" }) {
+function SlotRow({
+  chars,
+  count,
+  type,
+  team,
+  defeated,
+  onToggleDefeated,
+}: {
+  chars: DraftCharacter[];
+  count: number;
+  type: "pick" | "ban";
+  team: "A" | "B";
+  defeated: Set<string>;
+  onToggleDefeated?: (codename: string) => void;
+}) {
   const slots = Array.from({ length: count }, (_, i) => chars[i] ?? null);
   return (
     <div className={styles.slotRow}>
       {slots.map((c, i) => c
-        ? <CharCard key={c.codename} char={c} state={type === "pick" ? (team === "A" ? "pickedA" : "pickedB") : "banned"} size={52} />
+        ? <CharCard
+            key={c.codename}
+            char={c}
+            state={type === "pick" ? (team === "A" ? "pickedA" : "pickedB") : "banned"}
+            size={52}
+            defeated={defeated.has(c.codename)}
+            onClick={
+              type === "pick" && onToggleDefeated
+                ? () => onToggleDefeated(c.codename)
+                : undefined
+            }
+          />
         : <div key={i} className={styles.emptySlot} style={{ width: 52, height: 52 }} />
       )}
     </div>
@@ -134,9 +175,22 @@ function SlotRow({ chars, count, type, team }: { chars: DraftCharacter[]; count:
 
 // ── Team column ───────────────────────────────────────────────────────────────
 
-function TeamColumn({ name, color, picks, bans, pickSlots, banSlots, allChars, isActive }: {
+function TeamColumn({
+  name,
+  color,
+  picks,
+  bans,
+  pickSlots,
+  banSlots,
+  allChars,
+  isActive,
+  defeated,
+  onToggleDefeated,
+}: {
   name: string; color: string; picks: string[]; bans: string[];
   pickSlots: number; banSlots: number; allChars: DraftCharacter[]; isActive: boolean;
+  defeated: Set<string>;
+  onToggleDefeated?: (codename: string) => void;
 }) {
   const findChar = (codename: string) => allChars.find(c => c.codename === codename)!;
   const team = color === TEAM_A_COLOR ? "A" : "B";
@@ -147,34 +201,36 @@ function TeamColumn({ name, color, picks, bans, pickSlots, banSlots, allChars, i
         {isActive && <span className={styles.turnBadge}>YOUR TURN</span>}
       </div>
       <div className={styles.sectionLabel}>Picks</div>
-      <SlotRow chars={picks.map(findChar).filter(Boolean)} count={pickSlots} type="pick" team={team as "A" | "B"} />
+      <SlotRow
+        chars={picks.map(findChar).filter(Boolean)}
+        count={pickSlots}
+        type="pick"
+        team={team as "A" | "B"}
+        defeated={defeated}
+        onToggleDefeated={onToggleDefeated}
+      />
       <div className={styles.sectionLabel}>Bans</div>
-      <SlotRow chars={bans.map(findChar).filter(Boolean)} count={banSlots} type="ban" team={team as "A" | "B"} />
+      <SlotRow
+        chars={bans.map(findChar).filter(Boolean)}
+        count={banSlots}
+        type="ban"
+        team={team as "A" | "B"}
+        defeated={new Set()}
+      />
     </div>
   );
 }
 
 // ── Idle phase ────────────────────────────────────────────────────────────────
 
-function IdlePhase({ onStart, error }: { onStart: (t1: string, t2: string) => void; error: string | null }) {
-  const [t1, setT1] = useState("");
-  const [t2, setT2] = useState("");
+function IdlePhase({ error }: { error: string | null }) {
   return (
     <div className={styles.idleRoot}>
       <div className={styles.idleTitle}>SF3TS 3v3 DRAFT</div>
-      <div className={styles.idleInputRow}>
-        <div className={styles.idleInputGroup} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>
-          <label className={styles.idleInputLabel}>Team 1</label>
-          <input className={styles.idleInput} value={t1} onChange={e => setT1(e.target.value)} placeholder="Team 1 name" />
-        </div>
-        <div className={styles.idleInputGroup} style={{ "--team-color": TEAM_B_COLOR } as React.CSSProperties}>
-          <label className={styles.idleInputLabel}>Team 2</label>
-          <input className={styles.idleInput} value={t2} onChange={e => setT2(e.target.value)} placeholder="Team 2 name" />
-        </div>
-      </div>
-      <button onClick={() => onStart(t1, t2)} className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}>
-        Start Draft
-      </button>
+      <p>Start a character draft from a match in the tournament dashboard.</p>
+      <a href="/" className={`${styles.btn} ${styles.btnPrimary} ${styles.btnLarge}`}>
+        Open Tournament Dashboard
+      </a>
       {error && <div className={styles.errorBar}>{error}</div>}
     </div>
   );
@@ -188,7 +244,7 @@ function RpsPhase({ state, onWinner }: { state: DraftState; onWinner: (w: 1 | 2)
   return (
     <div className={styles.rpsRoot}>
       <div className={styles.rpsTitle}>Who won Rock Paper Scissors?</div>
-      <div className={styles.rpsSubtitle}>The RPS winner chooses their team name and goes first in the draft.</div>
+      <div className={styles.rpsSubtitle}>The RPS winner goes first in the draft.</div>
       <div className={styles.rpsBtns}>
         <button onClick={() => onWinner(1)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_A_COLOR } as React.CSSProperties}>{t1}</button>
         <button onClick={() => onWinner(2)} className={`${styles.btn} ${styles.btnTeam} ${styles.btnXlarge}`} style={{ "--team-color": TEAM_B_COLOR } as React.CSSProperties}>{t2}</button>
@@ -219,7 +275,7 @@ export default function Draft() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const socket = io(API_BASE, { transports: ["websocket", "polling"] });
+    const socket = io({ transports: ["websocket", "polling"] });
     // Don't reset selectedChars on socket updates — staging is local until lock-in
     socket.on("draft:update", (state: DraftState) => { setDraft(state); });
     socket.on("connect_error", () => setError("Cannot connect to server"));
@@ -230,10 +286,6 @@ export default function Draft() {
     return () => { socket.disconnect(); };
   }, []);
 
-  const handleStart      = useCallback(async (t1: string, t2: string) => {
-    try { setDraft(await draftPost("/start", { team1Name: t1, team2Name: t2 })); setError(null); }
-    catch (error: unknown) { setError(getErrorMessage(error)); }
-  }, []);
   const handleRpsWinner  = useCallback(async (w: 1 | 2) => {
     try {
       await draftPost("/rps-winner", { winner: w });
@@ -293,16 +345,44 @@ export default function Draft() {
       setError(getErrorMessage(error));
     }
   }, []);
+  const handleToggleDefeated = useCallback(async (
+    team: 0 | 1,
+    codename: string,
+  ) => {
+    try {
+      const result = await draftPost<{ draft: DraftState }>(
+        "/defeat",
+        { team, codename },
+      );
+      setDraft(result.draft);
+      setError(null);
+    } catch (error: unknown) {
+      setError(getErrorMessage(error));
+    }
+  }, []);
 
   if (!draft) return <div className={styles.connecting}>Connecting…</div>;
 
   const { phase, ruleset } = draft;
 
-  if (phase === "idle") return <div className={styles.root}><IdlePhase onStart={handleStart} error={error} /></div>;
+  if (phase === "idle") return <div className={styles.root}><IdlePhase error={error} /></div>;
   if (phase === "rps")  return <div className={styles.root}><RpsPhase state={draft} onWinner={handleRpsWinner} /></div>;
   if (!ruleset)         return null;
 
-  const { teamAName, teamBName, teamABans, teamBBans, teamAPicks, teamBPicks, currentTeam, currentStep, canUndo, canRedo } = draft;
+  const {
+    teamAName,
+    teamBName,
+    teamABans,
+    teamBBans,
+    teamAPicks,
+    teamBPicks,
+    teamADefeated,
+    teamBDefeated,
+    currentTeam,
+    currentStep,
+    canUndo,
+    canRedo,
+  } = draft;
   const allChars  = ruleset.characters;
   const allBanned = new Set([...teamABans, ...teamBBans]);
   const bansPerTeam = { a: 0, b: 0 };
@@ -322,7 +402,7 @@ export default function Draft() {
   const actingColor = currentTeam === 0 ? TEAM_A_COLOR : currentTeam === 1 ? TEAM_B_COLOR : "#888";
   const actingName  = currentTeam === 0 ? teamAName    : currentTeam === 1 ? teamBName    : "";
   const prompt = phase === "complete"
-    ? "Draft complete"
+    ? "Draft complete — click a drafted character to toggle defeated"
     : hasSelection
       ? `${actingName}: Lock in ${selectedChars.map(cn => allChars.find(c => c.codename === cn)?.displayName).join(", ")}`
       : phase === "ban"
@@ -355,7 +435,22 @@ export default function Draft() {
 
       <div className={styles.main}>
         <div className={styles.sidebar}>
-          <TeamColumn name={teamAName} color={TEAM_A_COLOR} picks={teamAPicks} bans={teamABans} pickSlots={ruleset.teamSize} banSlots={bansPerTeam.a} allChars={allChars} isActive={currentTeam === 0} />
+          <TeamColumn
+            name={teamAName}
+            color={TEAM_A_COLOR}
+            picks={teamAPicks}
+            bans={teamABans}
+            pickSlots={ruleset.teamSize}
+            banSlots={bansPerTeam.a}
+            allChars={allChars}
+            isActive={currentTeam === 0}
+            defeated={new Set(teamADefeated)}
+            onToggleDefeated={
+              phase === "complete"
+                ? (codename) => handleToggleDefeated(0, codename)
+                : undefined
+            }
+          />
         </div>
         <div className={styles.gridArea}>
           <div className={styles.charGrid}>
@@ -391,7 +486,22 @@ export default function Draft() {
           )}
         </div>
         <div className={styles.sidebarRight}>
-          <TeamColumn name={teamBName} color={TEAM_B_COLOR} picks={teamBPicks} bans={teamBBans} pickSlots={ruleset.teamSize} banSlots={bansPerTeam.b} allChars={allChars} isActive={currentTeam === 1} />
+          <TeamColumn
+            name={teamBName}
+            color={TEAM_B_COLOR}
+            picks={teamBPicks}
+            bans={teamBBans}
+            pickSlots={ruleset.teamSize}
+            banSlots={bansPerTeam.b}
+            allChars={allChars}
+            isActive={currentTeam === 1}
+            defeated={new Set(teamBDefeated)}
+            onToggleDefeated={
+              phase === "complete"
+                ? (codename) => handleToggleDefeated(1, codename)
+                : undefined
+            }
+          />
         </div>
       </div>
 

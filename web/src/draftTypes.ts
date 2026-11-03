@@ -2,6 +2,7 @@ export interface DraftCharacter {
   codename: string;
   displayName: string;
   imagePath: string;
+  portraitOffset?: number;
 }
 
 export interface DraftRuleset {
@@ -18,6 +19,7 @@ export interface DraftStagingState {
 }
 
 export interface DraftState {
+  matchId: string | null;
   phase: "idle" | "rps" | "ban" | "pick" | "complete";
   pendingTeam1Name: string;
   pendingTeam2Name: string;
@@ -27,6 +29,8 @@ export interface DraftState {
   teamBBans: string[];
   teamAPicks: string[];
   teamBPicks: string[];
+  teamADefeated: string[];
+  teamBDefeated: string[];
   currentStep: number;
   currentTeam: 0 | 1 | null;
   rpsWinner: 1 | 2 | null;
@@ -35,4 +39,3 @@ export interface DraftState {
   canRedo: boolean;
   staging: DraftStagingState | null;
 }
-

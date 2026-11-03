@@ -31,7 +31,7 @@ const ruleset: DraftRuleset = {
 
 test("draft undo and redo restore the adjacent state", () => {
   draftStore.restart();
-  draftStore.start(ruleset, "Team A", "Team B");
+  draftStore.start(ruleset, "set-1", "Team A", "Team B");
   draftStore.setRpsWinner(1);
   assert.equal(draftStore.lockIn(["A"]), true);
 
@@ -47,6 +47,30 @@ test("draft undo and redo restore the adjacent state", () => {
   assert.equal(draftStore.redo(), true);
   assert.deepEqual(draftStore.getState().teamABans, ["A"]);
   assert.equal(draftStore.getState().currentStep, 1);
+
+  draftStore.restart();
+});
+
+test("draft defeat toggles are limited to completed drafted characters", () => {
+  draftStore.restart();
+  draftStore.start(ruleset, "set-1", "Team A", "Team B");
+  assert.equal(draftStore.getState().matchId, "set-1");
+  assert.equal(draftStore.toggleDefeated(0, "C"), null);
+
+  draftStore.setRpsWinner(1);
+  assert.equal(draftStore.lockIn(["A"]), true);
+  assert.equal(draftStore.lockIn(["B"]), true);
+  assert.equal(draftStore.lockIn(["C"]), true);
+  assert.equal(draftStore.lockIn(["D"]), true);
+  assert.equal(draftStore.getState().phase, "complete");
+
+  assert.equal(draftStore.toggleDefeated(0, "C"), true);
+  assert.deepEqual(draftStore.getState().teamADefeated, ["C"]);
+  assert.equal(draftStore.getState().canUndo, false);
+  assert.equal(draftStore.undo(), false);
+  assert.equal(draftStore.toggleDefeated(0, "C"), false);
+  assert.deepEqual(draftStore.getState().teamADefeated, []);
+  assert.equal(draftStore.toggleDefeated(0, "D"), null);
 
   draftStore.restart();
 });
@@ -156,6 +180,10 @@ test("scoreboard settings merge persisted partial settings with defaults", () =>
   assert.equal(settings.layout.mirrorPlayerCards, true);
   assert.equal(settings.elements.player1.scoreWidth, 60);
   assert.deepEqual(
+    settings.elements.player1Characters,
+    DEFAULT_SCOREBOARD_SETTINGS.elements.player1Characters,
+  );
+  assert.deepEqual(
     settings.elements.player1,
     DEFAULT_SCOREBOARD_SETTINGS.elements.player1,
   );
@@ -181,6 +209,13 @@ test("scoreboard symmetry mirrors player 1 geometry and preserves player 2 styli
   };
   settings.elements.player2.x = 40;
   settings.elements.player2.nameBackground.startColor = "#123456";
+  settings.elements.player1Characters = {
+    enabled: false,
+    x: 150,
+    y: 330,
+    width: 240,
+    height: 54,
+  };
 
   const parsed = parseScoreboardSettings(settings);
 
@@ -194,6 +229,13 @@ test("scoreboard symmetry mirrors player 1 geometry and preserves player 2 styli
     parsed.elements.player2.nameBackground.startColor,
     "#123456",
   );
+  assert.deepEqual(parsed.elements.player2Characters, {
+    enabled: false,
+    x: 1210,
+    y: 330,
+    width: 240,
+    height: 54,
+  });
 });
 
 test("disabled scoreboard symmetry preserves independent player 2 geometry", () => {

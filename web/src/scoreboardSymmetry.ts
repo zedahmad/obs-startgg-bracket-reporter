@@ -19,6 +19,17 @@ export function applyPlayerCardSymmetry(
         height: player1.height,
         scoreWidth: player1.scoreWidth,
       },
+      player2Characters: {
+        ...settings.elements.player2Characters,
+        enabled: settings.elements.player1Characters.enabled,
+        x:
+          settings.canvas.width -
+          settings.elements.player1Characters.x -
+          settings.elements.player1Characters.width,
+        y: settings.elements.player1Characters.y,
+        width: settings.elements.player1Characters.width,
+        height: settings.elements.player1Characters.height,
+      },
     },
   };
 }

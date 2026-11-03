@@ -14,9 +14,11 @@ import {
   saveStartggApiToken,
   selectScoreboardMatch,
   showScoreboard,
+  startCharacterDraft,
   startMatch,
   submitFinalResult,
   swapScoreboardPlayers,
+  toggleDraftDefeat,
   updateOfflineMatch,
   updateScoreDelta,
 } from "./api";
@@ -28,6 +30,7 @@ import {
   type SettingsChanges,
 } from "./settingsChanges";
 import { reconcileOfflineInput, type OfflineDetails } from "./offlineDetails";
+import type { DraftState } from "./draftTypes";
 import type { Match, TournamentStream } from "./types";
 
 type AppMode = "startgg" | "offline";
@@ -38,6 +41,7 @@ type ServerAppState = {
   mode: AppMode | null;
   matchesData: Record<string, Match>;
   streamsData: TournamentStream[];
+  draftData: DraftState;
 };
 
 type CountryFlagOption = {
@@ -303,6 +307,80 @@ function getStatusLabel(status: Match["status"]) {
   return labels[status];
 }
 
+function getDraftPhaseLabel(phase: DraftState["phase"]) {
+  const labels: Record<DraftState["phase"], string> = {
+    idle: "Not started",
+    rps: "Rock Paper Scissors",
+    ban: "Bans",
+    pick: "Picks",
+    complete: "Draft complete",
+  };
+  return labels[phase];
+}
+
+type DraftTeamControlsProps = {
+  label: string;
+  team: 0 | 1;
+  picks: string[];
+  defeated: string[];
+  draft: DraftState;
+  canToggle: boolean;
+  onToggle: (team: 0 | 1, codename: string) => void;
+};
+
+function DraftTeamControls({
+  label,
+  team,
+  picks,
+  defeated,
+  draft,
+  canToggle,
+  onToggle,
+}: DraftTeamControlsProps) {
+  const characters = picks
+    .map((codename) =>
+      draft.ruleset?.characters.find(
+        (character) => character.codename === codename,
+      ),
+    )
+    .filter((character) => character !== undefined);
+  const defeatedSet = new Set(defeated);
+
+  return (
+    <div className="draft-team-controls">
+      <strong>{label}</strong>
+      <div className="draft-character-buttons">
+        {characters.map((character) => {
+          const isDefeated = defeatedSet.has(character.codename);
+          return (
+            <button
+              className={`draft-character-button ${
+                isDefeated ? "is-defeated" : ""
+              }`}
+              type="button"
+              key={character.codename}
+              disabled={!canToggle}
+              aria-pressed={isDefeated}
+              title={
+                canToggle
+                  ? `${isDefeated ? "Restore" : "Defeat"} ${character.displayName}`
+                  : character.displayName
+              }
+              onClick={() => onToggle(team, character.codename)}
+            >
+              <img src={character.imagePath} alt="" />
+              <span>{character.displayName}</span>
+            </button>
+          );
+        })}
+        {characters.length === 0 && (
+          <span className="draft-character-empty">No characters drafted yet</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [matches, setMatches] = useState<Record<string, Match>>({});
   const [streams, setStreams] = useState<TournamentStream[]>([]);
@@ -327,6 +405,7 @@ export default function App() {
     useState<ScoreboardDisplay>({ visible: true, swapped: false });
   const [scoreboardSettings, setScoreboardSettings] =
     useState<ScoreboardSettings | null>(null);
+  const [draft, setDraft] = useState<DraftState | null>(null);
   const [scoreboardDefaults, setScoreboardDefaults] =
     useState<ScoreboardSettings | null>(null);
   const [configLoadFailed, setConfigLoadFailed] = useState(false);
@@ -368,6 +447,38 @@ export default function App() {
       ? currentMatch.score1
       : currentMatch.score2
     : 0;
+  const currentDraft =
+    currentMatch &&
+    draft?.matchId === currentMatch.id &&
+    draft.phase !== "idle"
+      ? draft
+      : null;
+  const displayedDraftTeam1 = currentDraft
+    ? playersSwapped
+      ? {
+          team: 1 as const,
+          picks: currentDraft.teamBPicks,
+          defeated: currentDraft.teamBDefeated,
+        }
+      : {
+          team: 0 as const,
+          picks: currentDraft.teamAPicks,
+          defeated: currentDraft.teamADefeated,
+        }
+    : null;
+  const displayedDraftTeam2 = currentDraft
+    ? playersSwapped
+      ? {
+          team: 0 as const,
+          picks: currentDraft.teamAPicks,
+          defeated: currentDraft.teamADefeated,
+        }
+      : {
+          team: 1 as const,
+          picks: currentDraft.teamBPicks,
+          defeated: currentDraft.teamBDefeated,
+        }
+    : null;
 
   const availableMatches = Object.values(matches).filter(
     (match) =>
@@ -405,6 +516,7 @@ export default function App() {
 
     setMatches(nextMatches);
     setStreams(nextStreams);
+    setDraft(state.draftData);
     setSelectedStartggStreamId((previousStreamId) => {
       return nextStreams.some((stream) => stream.id === previousStreamId)
         ? previousStreamId
@@ -646,6 +758,46 @@ export default function App() {
     }
   };
 
+  const openDraftController = () => {
+    window.open("/draft", "_blank");
+  };
+
+  const handleStartCharacterDraft = async (match: Match) => {
+    setIsBusy(true);
+    try {
+      const result = await startCharacterDraft(
+        match.id,
+        mode === "startgg"
+          ? selectedStartggStreamId || undefined
+          : undefined,
+      );
+      setDraft(result.draft);
+      updateMatchState(result.match);
+      setExpandedMatchId((expandedId) =>
+        expandedId === match.id ? null : expandedId,
+      );
+    } catch (error) {
+      console.error("Failed to start character draft:", error);
+      alert("Failed to start the character draft.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleToggleDraftCharacter = async (
+    team: 0 | 1,
+    codename: string,
+  ) => {
+    try {
+      const result = await toggleDraftDefeat(team, codename);
+      setDraft(result.draft);
+      updateMatchState(result.match);
+    } catch (error) {
+      console.error("Failed to update defeated character:", error);
+      alert("Failed to update the defeated character.");
+    }
+  };
+
   const handleDisplayedScoreDelta = async (
     player: 1 | 2,
     delta: -1 | 1,
@@ -859,6 +1011,9 @@ export default function App() {
       setScoreboardDisplay(display);
     });
     socket.on("scoreboard:settings", applyScoreboardSnapshot);
+    socket.on("draft:update", (updatedDraft: DraftState) => {
+      setDraft(updatedDraft);
+    });
 
     return () => {
       socket.disconnect();
@@ -1171,6 +1326,8 @@ export default function App() {
                     (stream) => stream.id === match.startggStreamId,
                   );
                   const isExpanded = expandedMatchId === match.id;
+                  const isDraftMatch =
+                    draft?.matchId === match.id && draft.phase !== "idle";
 
                   return (
                     <article
@@ -1194,6 +1351,11 @@ export default function App() {
                               >
                                 start.gg:{" "}
                                 {assignedStream?.name ?? "Assigned stream"}
+                              </span>
+                            )}
+                            {isDraftMatch && (
+                              <span className="draft-indicator">
+                                Character draft: {getDraftPhaseLabel(draft.phase)}
                               </span>
                             )}
                           </div>
@@ -1275,6 +1437,20 @@ export default function App() {
                           </div>
 
                           <div className="queue-match-actions">
+                            <button
+                              className="button ghost"
+                              onClick={() =>
+                                isDraftMatch
+                                  ? openDraftController()
+                                  : handleStartCharacterDraft(match)
+                              }
+                            >
+                              {isDraftMatch
+                                ? "Open Draft Controller"
+                                : draft && draft.phase !== "idle"
+                                  ? "Replace Character Draft"
+                                  : "Start Character Draft"}
+                            </button>
                             {match.status === "idle" && (
                               <button
                                 className="button"
@@ -1549,6 +1725,61 @@ export default function App() {
                   Status: {getStatusLabel(currentMatch.status)}
                 </p>
               </article>
+
+              {currentDraft &&
+              displayedDraftTeam1 &&
+              displayedDraftTeam2 ? (
+                <section className="draft-manager-card">
+                  <div className="draft-manager-header">
+                    <div>
+                      <p className="eyebrow">Character draft</p>
+                      <h3>{getDraftPhaseLabel(currentDraft.phase)}</h3>
+                    </div>
+                    <button
+                      className="button ghost"
+                      type="button"
+                      onClick={openDraftController}
+                    >
+                      Open Draft Controller
+                    </button>
+                  </div>
+                  <div className="draft-manager-teams">
+                    <DraftTeamControls
+                      label={displayedPlayer1?.name ?? "Player 1"}
+                      team={displayedDraftTeam1.team}
+                      picks={displayedDraftTeam1.picks}
+                      defeated={displayedDraftTeam1.defeated}
+                      draft={currentDraft}
+                      canToggle={currentDraft.phase === "complete"}
+                      onToggle={handleToggleDraftCharacter}
+                    />
+                    <DraftTeamControls
+                      label={displayedPlayer2?.name ?? "Player 2"}
+                      team={displayedDraftTeam2.team}
+                      picks={displayedDraftTeam2.picks}
+                      defeated={displayedDraftTeam2.defeated}
+                      draft={currentDraft}
+                      canToggle={currentDraft.phase === "complete"}
+                      onToggle={handleToggleDraftCharacter}
+                    />
+                  </div>
+                  <p className="draft-manager-help">
+                    {currentDraft.phase === "complete"
+                      ? "Click a character to toggle defeated. The opposing score updates automatically."
+                      : "Drafted characters will appear here and on the scoreboard as they are locked in."}
+                  </p>
+                </section>
+              ) : (
+                <button
+                  className="button secondary draft-launch-button"
+                  type="button"
+                  onClick={() => handleStartCharacterDraft(currentMatch)}
+                >
+                  {draft && draft.phase !== "idle"
+                    ? "Replace Active Character Draft"
+                    : "Start Character Draft"}
+                </button>
+              )}
 
               {mode === "offline" ? (
                 <div className="action-row">

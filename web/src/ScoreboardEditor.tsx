@@ -18,12 +18,18 @@ import {
 } from "./settingsChanges";
 import { applyPlayerCardSymmetry } from "./scoreboardSymmetry";
 import type {
+  CharacterRailSettings,
   PlayerBlockSettings,
   RoundBlockSettings,
   ScoreboardSettings,
 } from "./scoreboardSettings";
 
-type ElementKey = "player1" | "player2" | "round";
+type ElementKey =
+  | "player1"
+  | "player2"
+  | "player1Characters"
+  | "player2Characters"
+  | "round";
 type InteractionType = "move" | "resize";
 type SaveState = "idle" | "saving" | "saved" | "error";
 const CANVAS_GUTTER = 24;
@@ -57,7 +63,10 @@ function elementSettings(
 function updateElement(
   settings: ScoreboardSettings,
   element: ElementKey,
-  nextElement: PlayerBlockSettings | RoundBlockSettings,
+  nextElement:
+    | PlayerBlockSettings
+    | CharacterRailSettings
+    | RoundBlockSettings,
 ) {
   return {
     ...settings,
@@ -243,8 +252,12 @@ export default function ScoreboardEditor() {
 
   const { canvas } = settings;
   const activeElement: ElementKey | null =
-    settings.layout.mirrorPlayerCards && selectedElement === "player2"
-      ? "player1"
+    settings.layout.mirrorPlayerCards
+      ? selectedElement === "player2"
+        ? "player1"
+        : selectedElement === "player2Characters"
+          ? "player1Characters"
+          : selectedElement
       : selectedElement;
   const selectedValue = activeElement
     ? elementSettings(settings, activeElement)
@@ -304,7 +317,10 @@ export default function ScoreboardEditor() {
       interaction.baseSettings,
       interaction.element,
     );
-    let nextElement: PlayerBlockSettings | RoundBlockSettings;
+    let nextElement:
+      | PlayerBlockSettings
+      | CharacterRailSettings
+      | RoundBlockSettings;
 
     if (interaction.type === "move") {
       nextElement = {
@@ -321,10 +337,14 @@ export default function ScoreboardEditor() {
         ),
       };
     } else {
-      const minimumWidth =
-        interaction.element === "round"
-          ? 80
-          : (current as PlayerBlockSettings).scoreWidth + 80;
+      const isPlayerBlock =
+        interaction.element === "player1" ||
+        interaction.element === "player2";
+      const minimumWidth = interaction.element === "round"
+        ? 80
+        : isPlayerBlock
+          ? (current as PlayerBlockSettings).scoreWidth + 80
+          : 72;
       nextElement = {
         ...current,
         width: Math.round(
@@ -337,7 +357,11 @@ export default function ScoreboardEditor() {
         height: Math.round(
           clamp(
             interaction.startHeight + deltaY,
-            interaction.element === "round" ? 24 : 32,
+            interaction.element === "round" ||
+              interaction.element === "player1Characters" ||
+              interaction.element === "player2Characters"
+              ? 24
+              : 32,
             canvas.height - current.y,
           ),
         ),
@@ -389,7 +413,11 @@ export default function ScoreboardEditor() {
             ? "Player 1"
             : element === "player2"
               ? "Player 2"
-              : "Round"}
+              : element === "player1Characters"
+                ? "P1 Characters"
+                : element === "player2Characters"
+                  ? "P2 Characters"
+                  : "Round"}
         </span>
         <button
           className="scoreboard-editor-resize-handle"
@@ -463,6 +491,9 @@ export default function ScoreboardEditor() {
             />
             {editBox("player1")}
             {!settings.layout.mirrorPlayerCards && editBox("player2")}
+            {editBox("player1Characters")}
+            {!settings.layout.mirrorPlayerCards &&
+              editBox("player2Characters")}
             {editBox("round")}
           </div>
         </div>

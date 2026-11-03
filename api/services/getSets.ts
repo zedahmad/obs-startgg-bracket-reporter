@@ -24,6 +24,15 @@ const GET_SETS = gql`
               entrant {
                 id
                 name
+                participants {
+                  gamerTag
+                  prefix
+                  user {
+                    location {
+                      country
+                    }
+                  }
+                }
               }
               standing {
                 stats {

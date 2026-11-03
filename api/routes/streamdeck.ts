@@ -1,5 +1,5 @@
 import { Router } from "express";
-import type { Request, Response } from "express";
+import type { Response } from "express";
 import { store } from "../core/store";
 import { Server } from "socket.io";
 import type { Match } from "../core/types";
@@ -25,58 +25,41 @@ export function adjustDisplayedScore(
 export function createStreamDeckRouter(io: Server) {
   const router = Router();
 
-  // Scoreboard display state keyed by streamId (or "default")
-  const displayState: Record<string, { visible: boolean; swapped: boolean }> = {
-    default: { visible: true, swapped: false },
+  const displayState = {
+    visible: true,
+    swapped: false,
   };
-
-  function getDisplay(streamId: string) {
-    if (!displayState[streamId]) {
-      displayState[streamId] = { visible: true, swapped: false };
-    }
-    return displayState[streamId];
-  }
 
   function emitDisplay() {
     io.emit("scoreboard:display", displayState);
   }
 
-  function requestedStreamId(req: Request) {
-    const { streamId } = { ...req.query, ...req.body };
-    return typeof streamId === "string" && streamId ? streamId : undefined;
-  }
-
-  /** Find the match explicitly selected for a stream or the default scoreboard. */
-  function findActiveMatch(streamId?: string) {
-    const matches = Object.values(store.getState());
-    if (streamId) {
-      return (
-        matches.find(
-          (m) => m.streamId === streamId && m.status !== "complete",
-        ) ?? null
-      );
-    }
+  function findActiveMatch() {
     return (
-      matches.find((m) => Boolean(m.streamId) && m.status !== "complete") ??
+      Object.values(store.getState()).find(
+        (match) => match.isScoreboardMatch && match.status !== "complete",
+      ) ??
       null
     );
   }
 
   function updateDisplayedScore(
-    req: Request,
     res: Response,
     player: 1 | 2,
     delta: -1 | 1,
   ) {
-    const streamId = requestedStreamId(req);
-    const match = findActiveMatch(streamId);
+    const match = findActiveMatch();
     if (!match) return res.status(404).json({ error: "No active match found" });
     if (match.status === "complete") {
       return res.status(409).json({ error: "Match is complete" });
     }
 
-    const display = getDisplay(streamId ?? "default");
-    const scores = adjustDisplayedScore(match, player, delta, display.swapped);
+    const scores = adjustDisplayedScore(
+      match,
+      player,
+      delta,
+      displayState.swapped,
+    );
 
     store.dispatch({
       type: "SCORE_UPDATED",
@@ -89,24 +72,23 @@ export function createStreamDeckRouter(io: Server) {
   // ── Score controls ────────────────────────────────────────────────────────
 
   router.all("/p1/score/up", (req, res) => {
-    return updateDisplayedScore(req, res, 1, 1);
+    return updateDisplayedScore(res, 1, 1);
   });
 
   router.all("/p1/score/down", (req, res) => {
-    return updateDisplayedScore(req, res, 1, -1);
+    return updateDisplayedScore(res, 1, -1);
   });
 
   router.all("/p2/score/up", (req, res) => {
-    return updateDisplayedScore(req, res, 2, 1);
+    return updateDisplayedScore(res, 2, 1);
   });
 
   router.all("/p2/score/down", (req, res) => {
-    return updateDisplayedScore(req, res, 2, -1);
+    return updateDisplayedScore(res, 2, -1);
   });
 
   router.all("/score/reset", (req, res) => {
-    const streamId = requestedStreamId(req);
-    const match = findActiveMatch(streamId);
+    const match = findActiveMatch();
     if (!match) return res.status(404).json({ error: "No active match found" });
     if (match.status === "complete") return res.status(409).json({ error: "Match is complete" });
 
@@ -122,27 +104,21 @@ export function createStreamDeckRouter(io: Server) {
   // ── Display controls ──────────────────────────────────────────────────────
 
   router.all("/swap", (req, res) => {
-    const streamId = requestedStreamId(req) ?? "default";
-    const d = getDisplay(streamId);
-    d.swapped = !d.swapped;
+    displayState.swapped = !displayState.swapped;
     emitDisplay();
-    return res.json({ streamId, swapped: d.swapped });
+    return res.json({ swapped: displayState.swapped });
   });
 
   router.all("/scoreboard/show", (req, res) => {
-    const streamId = requestedStreamId(req) ?? "default";
-    const d = getDisplay(streamId);
-    d.visible = true;
+    displayState.visible = true;
     emitDisplay();
-    return res.json({ streamId, visible: true });
+    return res.json({ visible: true });
   });
 
   router.all("/scoreboard/hide", (req, res) => {
-    const streamId = requestedStreamId(req) ?? "default";
-    const d = getDisplay(streamId);
-    d.visible = false;
+    displayState.visible = false;
     emitDisplay();
-    return res.json({ streamId, visible: false });
+    return res.json({ visible: false });
   });
 
   router.all("/display", (_req, res) => {

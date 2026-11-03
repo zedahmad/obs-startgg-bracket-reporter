@@ -30,10 +30,20 @@ export type ScoreboardSettings = {
     width: number;
     height: number;
   };
+  layout: {
+    mirrorPlayerCards: boolean;
+  };
   text: {
     fontFamily: string;
     playerNameSize: number;
     playerNameColor: string;
+    sponsorTagsEnabled: boolean;
+    sponsorTagSize: number;
+    sponsorTagColor: string;
+    sponsorTagWeight: number;
+    sponsorTagSeparator: string;
+    sponsorTagSeparatorEnabled: boolean;
+    playerFlagsEnabled: boolean;
     scoreSize: number;
     scoreColor: string;
     roundSize: number;
@@ -51,10 +61,20 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
     width: 1920,
     height: 1080,
   },
+  layout: {
+    mirrorPlayerCards: true,
+  },
   text: {
     fontFamily: '"Barlow Condensed", sans-serif',
-    playerNameSize: 28,
+    playerNameSize: 30,
     playerNameColor: "#ffffff",
+    sponsorTagsEnabled: true,
+    sponsorTagSize: 24,
+    sponsorTagColor: "#b8c7e0",
+    sponsorTagWeight: 700,
+    sponsorTagSeparator: "|",
+    sponsorTagSeparatorEnabled: false,
+    playerFlagsEnabled: false,
     scoreSize: 38,
     scoreColor: "#111111",
     roundSize: 18,
@@ -67,7 +87,7 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
       y: 140,
       width: 368,
       height: 60,
-      scoreWidth: 68,
+      scoreWidth: 60,
       nameBackground: {
         startColor: "#527aa0",
         endColor: "#4f4c83",
@@ -87,7 +107,7 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
       y: 140,
       width: 368,
       height: 60,
-      scoreWidth: 68,
+      scoreWidth: 60,
       nameBackground: {
         startColor: "#527aa0",
         endColor: "#4f4c83",
@@ -108,7 +128,7 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
       width: 194,
       height: 32,
       background: {
-        startColor: "#8b2a75",
+        startColor: "#d00a69",
         endColor: "#d00a69",
         angle: 90,
         customCss: "",
@@ -245,11 +265,12 @@ function mergeDefaults(defaults: unknown, value: unknown): unknown {
 export function parseScoreboardSettings(value: unknown): ScoreboardSettings {
   const settings = requireRecord(value, "scoreboard");
   const canvas = requireRecord(settings.canvas, "scoreboard.canvas");
+  const layout = requireRecord(settings.layout, "scoreboard.layout");
   const text = requireRecord(settings.text, "scoreboard.text");
   const elements = requireRecord(settings.elements, "scoreboard.elements");
   const round = requireRecord(elements.round, "scoreboard.elements.round");
 
-  return {
+  const parsed: ScoreboardSettings = {
     canvas: {
       width: requireNumber(
         canvas.width,
@@ -262,6 +283,12 @@ export function parseScoreboardSettings(value: unknown): ScoreboardSettings {
         "scoreboard.canvas.height",
         1,
         10000,
+      ),
+    },
+    layout: {
+      mirrorPlayerCards: requireBoolean(
+        layout.mirrorPlayerCards,
+        "scoreboard.layout.mirrorPlayerCards",
       ),
     },
     text: {
@@ -280,6 +307,41 @@ export function parseScoreboardSettings(value: unknown): ScoreboardSettings {
         text.playerNameColor,
         "scoreboard.text.playerNameColor",
         100,
+      ),
+      sponsorTagsEnabled: requireBoolean(
+        text.sponsorTagsEnabled,
+        "scoreboard.text.sponsorTagsEnabled",
+      ),
+      sponsorTagSize: requireNumber(
+        text.sponsorTagSize,
+        "scoreboard.text.sponsorTagSize",
+        1,
+        500,
+      ),
+      sponsorTagColor: requireString(
+        text.sponsorTagColor,
+        "scoreboard.text.sponsorTagColor",
+        100,
+      ),
+      sponsorTagWeight: requireNumber(
+        text.sponsorTagWeight,
+        "scoreboard.text.sponsorTagWeight",
+        100,
+        900,
+      ),
+      sponsorTagSeparator: requireString(
+        text.sponsorTagSeparator,
+        "scoreboard.text.sponsorTagSeparator",
+        20,
+        true,
+      ),
+      sponsorTagSeparatorEnabled: requireBoolean(
+        text.sponsorTagSeparatorEnabled,
+        "scoreboard.text.sponsorTagSeparatorEnabled",
+      ),
+      playerFlagsEnabled: requireBoolean(
+        text.playerFlagsEnabled,
+        "scoreboard.text.playerFlagsEnabled",
       ),
       scoreSize: requireNumber(
         text.scoreSize,
@@ -346,6 +408,31 @@ export function parseScoreboardSettings(value: unknown): ScoreboardSettings {
           round.background,
           "scoreboard.elements.round.background",
         ),
+      },
+    },
+  };
+
+  return applyPlayerCardSymmetry(parsed);
+}
+
+export function applyPlayerCardSymmetry(
+  settings: ScoreboardSettings,
+): ScoreboardSettings {
+  if (!settings.layout.mirrorPlayerCards) return settings;
+
+  const player1 = settings.elements.player1;
+  return {
+    ...settings,
+    elements: {
+      ...settings.elements,
+      player2: {
+        ...settings.elements.player2,
+        enabled: player1.enabled,
+        x: settings.canvas.width - player1.x - player1.width,
+        y: player1.y,
+        width: player1.width,
+        height: player1.height,
+        scoreWidth: player1.scoreWidth,
       },
     },
   };

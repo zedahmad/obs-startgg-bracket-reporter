@@ -30,10 +30,20 @@ export type ScoreboardSettings = {
     width: number;
     height: number;
   };
+  layout: {
+    mirrorPlayerCards: boolean;
+  };
   text: {
     fontFamily: string;
     playerNameSize: number;
     playerNameColor: string;
+    sponsorTagsEnabled: boolean;
+    sponsorTagSize: number;
+    sponsorTagColor: string;
+    sponsorTagWeight: number;
+    sponsorTagSeparator: string;
+    sponsorTagSeparatorEnabled: boolean;
+    playerFlagsEnabled: boolean;
     scoreSize: number;
     scoreColor: string;
     roundSize: number;

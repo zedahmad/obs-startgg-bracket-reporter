@@ -59,7 +59,7 @@ test("successful final submission can complete a live match", () => {
     player2: { id: "2", name: "Player 2" },
     score1: 3,
     score2: 1,
-    streamId: "stream-1",
+    isScoreboardMatch: true,
     startggStreamId: "stream-1",
     status: "live",
     updatedAt: 0,
@@ -71,7 +71,51 @@ test("successful final submission can complete a live match", () => {
   );
 
   assert.equal(result[match.id].status, "complete");
-  assert.equal(result[match.id].streamId, null);
+  assert.equal(result[match.id].isScoreboardMatch, false);
+});
+
+test("offline detail updates preserve optional sponsor and country metadata", () => {
+  const match: Match = {
+    id: "offline-match",
+    round: "Offline Match",
+    player1: { id: "offline-player-1", name: "Player 1" },
+    player2: { id: "offline-player-2", name: "Player 2" },
+    score1: 0,
+    score2: 0,
+    isScoreboardMatch: true,
+    startggStreamId: null,
+    status: "live",
+    updatedAt: 0,
+  };
+
+  const result = reducer(
+    { [match.id]: match },
+    {
+      type: "OFFLINE_MATCH_DETAILS_UPDATED",
+      matchId: match.id,
+      player1Name: "Updated 1",
+      player1Sponsor: "TEAM",
+      player1Country: "US",
+      player2Name: "Updated 2",
+      player2Sponsor: null,
+      player2Country: "JP",
+      matchLabel: "Grand Final",
+    },
+  );
+
+  assert.deepEqual(result[match.id].player1, {
+    id: "offline-player-1",
+    name: "Updated 1",
+    sponsor: "TEAM",
+    country: "US",
+  });
+  assert.deepEqual(result[match.id].player2, {
+    id: "offline-player-2",
+    name: "Updated 2",
+    sponsor: null,
+    country: "JP",
+  });
+  assert.equal(result[match.id].round, "Grand Final");
 });
 
 test("display-side score controls follow swapped players", () => {
@@ -98,16 +142,70 @@ test("display-side score controls follow swapped players", () => {
 test("scoreboard settings merge persisted partial settings with defaults", () => {
   const settings = mergeScoreboardSettings({
     canvas: { width: 1280 },
-    text: { playerNameSize: 32 },
+    text: { playerNameSize: 32, playerNameColor: "#abcdef" },
   });
 
   assert.equal(settings.canvas.width, 1280);
   assert.equal(settings.canvas.height, 1080);
   assert.equal(settings.text.playerNameSize, 32);
+  assert.equal(settings.text.sponsorTagSize, 24);
+  assert.equal(settings.text.sponsorTagColor, "#b8c7e0");
+  assert.equal(settings.text.sponsorTagsEnabled, true);
+  assert.equal(settings.text.sponsorTagSeparatorEnabled, false);
+  assert.equal(settings.text.playerFlagsEnabled, false);
+  assert.equal(settings.layout.mirrorPlayerCards, true);
+  assert.equal(settings.elements.player1.scoreWidth, 60);
   assert.deepEqual(
     settings.elements.player1,
     DEFAULT_SCOREBOARD_SETTINGS.elements.player1,
   );
+});
+
+test("scoreboard defaults use the updated player sizing", () => {
+  assert.equal(DEFAULT_SCOREBOARD_SETTINGS.text.playerNameSize, 30);
+  assert.equal(DEFAULT_SCOREBOARD_SETTINGS.elements.player1.scoreWidth, 60);
+  assert.equal(DEFAULT_SCOREBOARD_SETTINGS.elements.player2.scoreWidth, 60);
+});
+
+test("scoreboard symmetry mirrors player 1 geometry and preserves player 2 styling", () => {
+  const settings = structuredClone(DEFAULT_SCOREBOARD_SETTINGS);
+  settings.canvas.width = 1600;
+  settings.elements.player1 = {
+    ...settings.elements.player1,
+    enabled: false,
+    x: 125,
+    y: 240,
+    width: 420,
+    height: 72,
+    scoreWidth: 64,
+  };
+  settings.elements.player2.x = 40;
+  settings.elements.player2.nameBackground.startColor = "#123456";
+
+  const parsed = parseScoreboardSettings(settings);
+
+  assert.equal(parsed.elements.player2.enabled, false);
+  assert.equal(parsed.elements.player2.x, 1055);
+  assert.equal(parsed.elements.player2.y, 240);
+  assert.equal(parsed.elements.player2.width, 420);
+  assert.equal(parsed.elements.player2.height, 72);
+  assert.equal(parsed.elements.player2.scoreWidth, 64);
+  assert.equal(
+    parsed.elements.player2.nameBackground.startColor,
+    "#123456",
+  );
+});
+
+test("disabled scoreboard symmetry preserves independent player 2 geometry", () => {
+  const settings = structuredClone(DEFAULT_SCOREBOARD_SETTINGS);
+  settings.layout.mirrorPlayerCards = false;
+  settings.elements.player2.x = 77;
+  settings.elements.player2.y = 88;
+
+  const parsed = parseScoreboardSettings(settings);
+
+  assert.equal(parsed.elements.player2.x, 77);
+  assert.equal(parsed.elements.player2.y, 88);
 });
 
 test("scoreboard settings reject a score box wider than its player block", () => {
@@ -134,7 +232,11 @@ test("settings patches preserve unrelated concurrent changes", () => {
   assert.equal(second.text.scoreSize, 48);
   assert.equal(second.elements.player1.x, 400);
   assert.equal(second.elements.player1.y, 200);
-  assert.equal(second.elements.player2.x, DEFAULT_SCOREBOARD_SETTINGS.elements.player2.x);
+  assert.equal(
+    second.elements.player2.x,
+    second.canvas.width - 400 - second.elements.player1.width,
+  );
+  assert.equal(second.elements.player2.y, 200);
 });
 
 test("settings patches validate the merged geometry", () => {
@@ -217,28 +319,51 @@ test("selecting a scoreboard match replaces the previous local selection", () =>
     player2: { id: "2", name: "Player 2" },
     score1: 0,
     score2: 0,
-    streamId: "stream-1",
+    isScoreboardMatch: true,
     startggStreamId: "stream-1",
-    status: "assigned",
+    status: "live",
     updatedAt: 0,
   };
   const secondMatch: Match = {
     ...firstMatch,
     id: "set-2",
-    streamId: null,
+    isScoreboardMatch: false,
     startggStreamId: null,
     status: "idle",
   };
 
   const result = reducer(
     { [firstMatch.id]: firstMatch, [secondMatch.id]: secondMatch },
-    { type: "MATCH_ASSIGNED", matchId: secondMatch.id, streamId: "stream-1" },
+    { type: "SCOREBOARD_MATCH_SELECTED", matchId: secondMatch.id },
   );
 
-  assert.equal(result[firstMatch.id].streamId, null);
-  assert.equal(result[firstMatch.id].status, "idle");
-  assert.equal(result[secondMatch.id].streamId, "stream-1");
-  assert.equal(result[secondMatch.id].status, "assigned");
+  assert.equal(result[firstMatch.id].isScoreboardMatch, false);
+  assert.equal(result[firstMatch.id].status, "live");
+  assert.equal(result[secondMatch.id].isScoreboardMatch, true);
+  assert.equal(result[secondMatch.id].status, "idle");
+});
+
+test("off-stream matches can start without becoming the scoreboard match", () => {
+  const match: Match = {
+    id: "set-1",
+    round: "Round 1",
+    player1: { id: "1", name: "Player 1" },
+    player2: { id: "2", name: "Player 2" },
+    score1: 0,
+    score2: 0,
+    isScoreboardMatch: false,
+    startggStreamId: null,
+    status: "idle",
+    updatedAt: 0,
+  };
+
+  const result = reducer(
+    { [match.id]: match },
+    { type: "MATCH_STARTED", matchId: match.id },
+  );
+
+  assert.equal(result[match.id].status, "live");
+  assert.equal(result[match.id].isScoreboardMatch, false);
 });
 
 test("start.gg stream metadata does not select a scoreboard match", () => {
@@ -248,15 +373,40 @@ test("start.gg stream metadata does not select a scoreboard match", () => {
     state: 1,
     stream: { id: "stream-1" },
     slots: [
-      { entrant: { id: "1", name: "Player 1" } },
-      { entrant: { id: "2", name: "Player 2" } },
+      {
+        entrant: {
+          id: "1",
+          name: "TEAM | Player 1",
+          participants: [{
+            gamerTag: "Player 1",
+            prefix: "TEAM",
+            user: { location: { country: "United States" } },
+          }],
+        },
+      },
+      {
+        entrant: {
+          id: "2",
+          name: "Player 2",
+          participants: [{
+            gamerTag: "Player 2",
+            prefix: " ",
+            user: { location: { country: "United States" } },
+          }],
+        },
+      },
     ],
   });
 
   assert.ok(match);
-  assert.equal(match.streamId, null);
+  assert.equal(match.isScoreboardMatch, false);
   assert.equal(match.startggStreamId, "stream-1");
   assert.equal(match.status, "idle");
+  assert.equal(match.player1.name, "Player 1");
+  assert.equal(match.player1.sponsor, "TEAM");
+  assert.equal(match.player1.country, "United States");
+  assert.equal(match.player2.sponsor, null);
+  assert.equal(match.player2.country, "United States");
 });
 
 test("start.gg refresh preserves the local scoreboard selection", () => {
@@ -267,7 +417,7 @@ test("start.gg refresh preserves the local scoreboard selection", () => {
     player2: { id: "2", name: "Player 2" },
     score1: 1,
     score2: 0,
-    streamId: "local-stream",
+    isScoreboardMatch: true,
     startggStreamId: null,
     status: "live",
     updatedAt: 10,
@@ -275,7 +425,7 @@ test("start.gg refresh preserves the local scoreboard selection", () => {
   const refreshedMatch: Match = {
     ...localMatch,
     score1: 0,
-    streamId: null,
+    isScoreboardMatch: false,
     startggStreamId: "startgg-stream",
     status: "idle",
     updatedAt: 20,
@@ -285,7 +435,7 @@ test("start.gg refresh preserves the local scoreboard selection", () => {
   store.mergeFromStartGG([refreshedMatch]);
 
   const result = store.getState()[localMatch.id];
-  assert.equal(result.streamId, "local-stream");
+  assert.equal(result.isScoreboardMatch, true);
   assert.equal(result.startggStreamId, "startgg-stream");
   assert.equal(result.status, "live");
   assert.equal(result.score1, 1);

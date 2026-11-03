@@ -1,6 +1,5 @@
 export type MatchStatus =
   | "idle"
-  | "assigned"
   | "live"
   | "saved"
   | "complete";
@@ -9,17 +8,27 @@ export interface Match {
   id: string;
   round: string;
 
-  player1: { id: string; name: string };
-  player2: { id: string; name: string };
+  player1: {
+    id: string;
+    name: string;
+    sponsor?: string | null;
+    country?: string | null;
+  };
+  player2: {
+    id: string;
+    name: string;
+    sponsor?: string | null;
+    country?: string | null;
+  };
 
   score1: number;
   score2: number;
 
-  /** Stream selected locally for this app's scoreboard. */
-  streamId: string | null;
+  /** Whether this is the one match currently shown on the local scoreboard. */
+  isScoreboardMatch: boolean;
   /** Stream assignment currently reported by start.gg. */
   startggStreamId: string | null;
-  status: "idle" | "assigned" | "live" | "saved" | "complete";
+  status: MatchStatus;
 
   updatedAt: number;
 }

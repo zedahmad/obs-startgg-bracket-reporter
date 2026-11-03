@@ -11,7 +11,11 @@ export default defineConfig({
         target: "http://127.0.0.1:3001",
         changeOrigin: true,
       },
-	  "^/(matches|streams|assign|unassign|start|updateScoreLocal|resetScore|offline|saveResult|submitFinal|refresh|config|app-state|settings|streamdeck|draft.)": {
+      "/fonts": {
+        target: "http://127.0.0.1:3001",
+        changeOrigin: true,
+      },
+	  "^/(matches|streams|assign|unassign|start|updateScoreLocal|updateScoreDelta|resetScore|offline|saveResult|submitFinal|refresh|config|app-state|settings|streamdeck|draft.)": {
 		target: 'http://127.0.0.1:3001',
 		changeOrigin: true
 	  },

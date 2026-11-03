@@ -37,7 +37,7 @@ class Store {
           score1: existing.score1,
           score2: existing.score2,
           status: existing.status,
-          streamId: existing.streamId,
+          isScoreboardMatch: existing.isScoreboardMatch,
           updatedAt: existing.updatedAt,
         };
       } else {

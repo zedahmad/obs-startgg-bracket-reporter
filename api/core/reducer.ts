@@ -14,45 +14,36 @@ export function reducer(state: Record<string, Match>, event: Event) {
   switch (event.type) {
     case "OFFLINE_MATCH_DETAILS_UPDATED":
       match.player1.name = event.player1Name;
+      match.player1.sponsor = event.player1Sponsor;
+      match.player1.country = event.player1Country;
       match.player2.name = event.player2Name;
+      match.player2.sponsor = event.player2Sponsor;
+      match.player2.country = event.player2Country;
       match.round = event.matchLabel;
       break;
 
-    case "MATCH_ASSIGNED":
+    case "SCOREBOARD_MATCH_SELECTED":
       if (match.status === "complete") return state;
-
       for (const otherMatch of Object.values(state)) {
-        if (
-          otherMatch.id !== match.id &&
-          otherMatch.streamId === event.streamId
-        ) {
-          otherMatch.streamId = null;
-          if (otherMatch.status === "assigned") {
-            otherMatch.status = "idle";
-          }
+        if (otherMatch.id !== match.id && otherMatch.isScoreboardMatch) {
+          otherMatch.isScoreboardMatch = false;
           otherMatch.updatedAt = Date.now();
         }
       }
-
-      match.streamId = event.streamId;
-      if (match.status === "idle") match.status = "assigned";
+      match.isScoreboardMatch = true;
       break;
 
-    case "MATCH_UNASSIGNED":
-      if (!match.streamId) return state;
+    case "SCOREBOARD_MATCH_CLEARED":
+      if (!match.isScoreboardMatch) return state;
+      match.isScoreboardMatch = false;
+      break;
 
-      match.streamId = null;
-
-      // Only regress to idle if it hasn't been started yet
-      if (match.status === "assigned") {
-        match.status = "idle";
-      }
-
-      match.updatedAt = Date.now();
+    case "STARTGG_STREAM_UPDATED":
+      match.startggStreamId = event.streamId;
       break;
 
     case "MATCH_STARTED":
-      if (match.status !== "assigned") return state;
+      if (match.status !== "idle") return state;
       match.status = "live";
       break;
 
@@ -71,7 +62,7 @@ export function reducer(state: Record<string, Match>, event: Event) {
     case "MATCH_COMPLETED":
       if (match.status !== "live" && match.status !== "saved") return state;
       match.status = "complete";
-      match.streamId = null;
+      match.isScoreboardMatch = false;
       break;
   }
 

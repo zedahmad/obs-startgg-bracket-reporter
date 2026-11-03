@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "cors": "^2.8.6",
+    "country-flag-emoji-polyfill": "^0.1.10",
     "dotenv": "^17.4.2",
     "express": "^4.22.1",
     "graphql-request": "^7.4.0",

@@ -4,9 +4,10 @@ A tournament management platform for livestreamed events. Replaces TournamentStr
 
 ## Features
 
-- **Bracket Manager** — Electron desktop app (React/Vite) for managing tournament sets: assign matches to streams, track scores, and submit results to start.gg.
+- **Bracket Manager** — Electron desktop app (React/Vite) for managing tournament sets, including off-stream matches, tracking scores, and submitting results to start.gg.
 - **Offline Scoreboard Mode** — Enter two player names and use the score controls, OBS overlay, and Stream Deck endpoints without a start.gg tournament.
-- **Scoreboard Overlay** — Browser source for OBS; auto-updates via WebSocket when scores or players change.
+- **Scoreboard Overlay** — Browser source for OBS; auto-updates via WebSocket when scores or players change, with independently styled sponsor tags and optional player country flags.
+- **Scoreboard Editor** — Opens the live scoreboard renderer in a dedicated tab with draggable element bounds, mirrored player-card geometry by default, and an overlay containing all appearance settings.
 - **Character Draft Overlay** — Browser source for OBS; displays a live ban/pick draft for team-format matches.
 - **Stream Deck Integration** — HTTP endpoints (GET or POST) for hardware controllers to adjust scores and toggle scoreboard visibility.
 - **Multi-instance Sync** — All open bracket manager windows stay in sync in real time via Socket.io; the backend is the single source of truth.
@@ -133,12 +134,13 @@ All endpoints are on `http://localhost:3001`.
 | `GET` | `/matches` | — | All matches in backend state |
 | `GET` | `/streams` | — | Tournament streams from start.gg |
 | `POST` | `/refresh` | — | Pull latest sets from start.gg (preserves local scores) |
-| `POST` | `/offline` | `{ player1Name, player2Name, matchLabel? }` | Create/reset the active offline scoreboard match |
-| `POST` | `/offline/update` | `{ player1Name, player2Name, matchLabel }` | Update offline names and label without resetting scores |
-| `POST` | `/assign` | `{ matchId, streamId }` | Select a match for the local scoreboard and asynchronously sync its stream to start.gg |
-| `POST` | `/unassign` | `{ matchId }` | Clear a match from the local scoreboard without changing its start.gg stream assignment |
+| `POST` | `/offline` | `{ player1Name, player1Sponsor?, player1Country?, player2Name, player2Sponsor?, player2Country?, matchLabel? }` | Create/reset the active offline scoreboard match |
+| `POST` | `/offline/update` | `{ player1Name, player1Sponsor?, player1Country?, player2Name, player2Sponsor?, player2Country?, matchLabel }` | Update offline player details and label without resetting scores |
+| `POST` | `/assign` | `{ matchId, streamId? }` | Select and start the one local scoreboard match; optionally sync a start.gg stream assignment |
+| `POST` | `/unassign` | `{ matchId }` | Clear the local scoreboard without changing the match lifecycle or start.gg stream assignment |
 | `POST` | `/start` | `{ matchId }` | Mark a match live locally and asynchronously sync its in-progress state to start.gg |
 | `POST` | `/updateScoreLocal` | `{ matchId, score1, score2 }` | Update scores in backend only |
+| `POST` | `/updateScoreDelta` | `{ matchId, player, delta }` | Atomically increment or decrement one player's score |
 | `POST` | `/resetScore` | `{ matchId }` | Reset both match scores to zero |
 | `POST` | `/saveResult` | `{ matchId }` | Push current scores to start.gg |
 | `POST` | `/submitFinal` | `{ matchId }` | Report final result and mark complete |
@@ -153,7 +155,7 @@ All endpoints are on `http://localhost:3001`.
 
 ### Stream Deck Endpoints
 
-All Stream Deck endpoints accept **GET or POST**. Pass `streamId` as a query param or JSON body field to target a specific stream; omit it to target the match explicitly selected for the local scoreboard.
+All Stream Deck endpoints accept **GET or POST** and target the one match currently selected for the local scoreboard.
 
 | Path | Description |
 |---|---|
@@ -192,7 +194,7 @@ Connect to `http://localhost:3001` with Socket.io. On connection the server imme
 |---|---|---|---|
 | `match:update` | server → client | `Record<string, Match>` | Full match state; emitted on every change |
 | `draft:update` | server → client | `DraftState` | Full draft state; emitted on every change |
-| `scoreboard:display` | server → client | `Record<string, { visible, swapped }>` | Display state per stream |
+| `scoreboard:display` | server → client | `{ visible, swapped }` | Display state for the local scoreboard |
 | `scoreboard:settings` | server → client | `ScoreboardSettings, scoreboardRevision` | Full settings plus a revision argument for ordering concurrent updates |
 
 ---
@@ -200,18 +202,15 @@ Connect to `http://localhost:3001` with Socket.io. On connection the server imme
 ## Match Status Lifecycle
 
 ```
-idle → assigned → live → saved → complete
-              ↑___________|
-              (can re-assign after unassign)
+idle → live → saved → complete
 ```
 
-- **idle** — known to the system but not on stream
-- **assigned** — assigned to a stream, not yet started
+- **idle** — known to the system but not started
 - **live** — actively in progress
 - **saved** — result recorded locally, not yet submitted to start.gg
 - **complete** — final result submitted; cannot be modified
 
-The backend preserves the locally selected scoreboard match, scores, and status across start.gg refreshes. A set's stream assignment or in-progress state on start.gg never selects it for the local scoreboard.
+Scoreboard selection is independent from match status and start.gg stream metadata. The backend preserves the locally selected scoreboard match, scores, and status across start.gg refreshes. Selecting a match for the scoreboard starts it immediately; other matches can be started, scored, and submitted without changing the overlay.
 
 ---
 

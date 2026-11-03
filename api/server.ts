@@ -37,11 +37,40 @@ let scoreboardRevision = 0;
 type AppMode = "startgg" | "offline";
 let appMode: AppMode | null = null;
 const OFFLINE_MATCH_ID = "offline-match";
-const OFFLINE_STREAM: TournamentStream = {
-  id: "offline",
-  name: "Offline Scoreboard",
-  source: null,
-};
+
+function parseOptionalText(
+  value: unknown,
+  field: string,
+  maximumLength: number,
+) {
+  if (value === undefined || value === null || value === "") {
+    return { value: null as string | null };
+  }
+  if (typeof value !== "string") {
+    return { value: null, error: `${field} must be a string` };
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) return { value: null as string | null };
+  if (trimmed.length > maximumLength) {
+    return {
+      value: null,
+      error: `${field} must be at most ${maximumLength} characters`,
+    };
+  }
+
+  return { value: trimmed };
+}
+
+function parseOptionalCountry(value: unknown, field: string) {
+  const parsed = parseOptionalText(value, field, 2);
+  if (parsed.error || !parsed.value) return parsed;
+
+  const country = parsed.value.toUpperCase();
+  return /^[A-Z]{2}$/.test(country)
+    ? { value: country }
+    : { value: null, error: `${field} must be a two-letter country code` };
+}
 
 const app = express();
 let broadcastAppState = () => {};
@@ -65,6 +94,31 @@ function log(message: string) {
   console.log(message);
 }
 
+const streamAssignmentQueues = new Map<string, Promise<void>>();
+
+function queueStartggStreamAssignment(matchId: string, streamId: string) {
+  const previous = streamAssignmentQueues.get(matchId) ?? Promise.resolve();
+  let next: Promise<void>;
+  next = previous
+    .then(async () => {
+      await assignStreamToSet(matchId, streamId);
+      store.dispatch({
+        type: "STARTGG_STREAM_UPDATED",
+        matchId,
+        streamId,
+      });
+    })
+    .catch((err) => {
+      log(`Failed to sync stream assignment to start.gg: ${err}`);
+    })
+    .finally(() => {
+      if (streamAssignmentQueues.get(matchId) === next) {
+        streamAssignmentQueues.delete(matchId);
+      }
+    });
+  streamAssignmentQueues.set(matchId, next);
+}
+
 app.use(cors({ origin: true }));
 
 app.use(express.json());
@@ -80,7 +134,14 @@ const apiRoot = (process as any).pkg
 const publicBase = path.join(apiRoot, "public");
 const assetsBase = path.join(apiRoot, "assets");
 const configBase = path.join(apiRoot, "config");
+const countryFlagFontBase = path.join(
+  apiRoot,
+  "node_modules",
+  "country-flag-emoji-polyfill",
+  "dist",
+);
 
+app.use("/fonts/country-flags", express.static(countryFlagFontBase));
 app.use("/scoreboard", express.static(path.join(publicBase, "scoreboard")));
 app.use("/draft-overlay", express.static(path.join(publicBase, "draft-overlay")));
 app.use("/assets", express.static(assetsBase));
@@ -362,28 +423,64 @@ app.post("/offline", (req, res) => {
     typeof req.body.player2Name === "string" ? req.body.player2Name.trim() : "";
   const matchLabel =
     typeof req.body.matchLabel === "string" ? req.body.matchLabel.trim() : "";
+  const player1Sponsor = parseOptionalText(
+    req.body.player1Sponsor,
+    "player1Sponsor",
+    100,
+  );
+  const player2Sponsor = parseOptionalText(
+    req.body.player2Sponsor,
+    "player2Sponsor",
+    100,
+  );
+  const player1Country = parseOptionalCountry(
+    req.body.player1Country,
+    "player1Country",
+  );
+  const player2Country = parseOptionalCountry(
+    req.body.player2Country,
+    "player2Country",
+  );
 
   if (!player1Name || !player2Name) {
     return res.status(400).json({
       error: "player1Name and player2Name are required",
     });
   }
+  const metadataError =
+    player1Sponsor.error ||
+    player2Sponsor.error ||
+    player1Country.error ||
+    player2Country.error;
+  if (metadataError) {
+    return res.status(400).json({ error: metadataError });
+  }
 
   const match: Match = {
     id: OFFLINE_MATCH_ID,
     round: matchLabel || "Offline Match",
-    player1: { id: "offline-player-1", name: player1Name },
-    player2: { id: "offline-player-2", name: player2Name },
+    player1: {
+      id: "offline-player-1",
+      name: player1Name,
+      sponsor: player1Sponsor.value,
+      country: player1Country.value,
+    },
+    player2: {
+      id: "offline-player-2",
+      name: player2Name,
+      sponsor: player2Sponsor.value,
+      country: player2Country.value,
+    },
     score1: 0,
     score2: 0,
-    streamId: OFFLINE_STREAM.id,
+    isScoreboardMatch: true,
     startggStreamId: null,
     status: "live",
     updatedAt: Date.now(),
   };
 
   appMode = "offline";
-  streams = [OFFLINE_STREAM];
+  streams = [];
   store.dispatch({
     type: "OFFLINE_MATCH_CONFIGURED",
     matchId: match.id,
@@ -404,8 +501,26 @@ app.post("/offline/update", (req, res) => {
     typeof req.body.player2Name === "string" ? req.body.player2Name.trim() : "";
   const matchLabel =
     typeof req.body.matchLabel === "string" ? req.body.matchLabel.trim() : "";
+  const player1Sponsor = parseOptionalText(
+    req.body.player1Sponsor,
+    "player1Sponsor",
+    100,
+  );
+  const player2Sponsor = parseOptionalText(
+    req.body.player2Sponsor,
+    "player2Sponsor",
+    100,
+  );
+  const player1Country = parseOptionalCountry(
+    req.body.player1Country,
+    "player1Country",
+  );
+  const player2Country = parseOptionalCountry(
+    req.body.player2Country,
+    "player2Country",
+  );
 
-  if (!match || match.streamId !== OFFLINE_STREAM.id) {
+  if (!match) {
     return res.status(404).json({ error: "Offline match not found" });
   }
 
@@ -414,12 +529,24 @@ app.post("/offline/update", (req, res) => {
       error: "player1Name, player2Name, and matchLabel are required",
     });
   }
+  const metadataError =
+    player1Sponsor.error ||
+    player2Sponsor.error ||
+    player1Country.error ||
+    player2Country.error;
+  if (metadataError) {
+    return res.status(400).json({ error: metadataError });
+  }
 
   store.dispatch({
     type: "OFFLINE_MATCH_DETAILS_UPDATED",
     matchId: match.id,
     player1Name,
+    player1Sponsor: player1Sponsor.value,
+    player1Country: player1Country.value,
     player2Name,
+    player2Sponsor: player2Sponsor.value,
+    player2Country: player2Country.value,
     matchLabel,
   });
 
@@ -429,9 +556,9 @@ app.post("/offline/update", (req, res) => {
 app.post("/assign", (req, res) => {
   const { matchId, streamId } = req.body;
 
-  if (!matchId || !streamId) {
+  if (!matchId) {
     return res.status(400).json({
-      error: "matchId and streamId are required",
+      error: "matchId is required",
     });
   }
 
@@ -443,7 +570,11 @@ app.post("/assign", (req, res) => {
     });
   }
 
-  const streamExists = streams.some((stream) => stream.id === streamId);
+  const selectedStreamId =
+    typeof streamId === "string" && streamId.trim() ? streamId.trim() : null;
+  const streamExists =
+    !selectedStreamId ||
+    streams.some((stream) => stream.id === selectedStreamId);
 
   if (!streamExists) {
     return res.status(400).json({
@@ -453,20 +584,27 @@ app.post("/assign", (req, res) => {
 
   if (match.status === "complete") {
     return res.status(409).json({
-      error: `Match cannot be assigned from status: ${match.status}`,
+      error: `Match cannot be shown from status: ${match.status}`,
     });
   }
 
   store.dispatch({
-    type: "MATCH_ASSIGNED",
+    type: "SCOREBOARD_MATCH_SELECTED",
     matchId,
-    streamId,
   });
 
-  if (match.startggStreamId !== streamId) {
-    void assignStreamToSet(matchId, streamId).catch((err) => {
-      log(`Failed to sync stream assignment to start.gg: ${err}`);
+  if (match.status === "idle") {
+    store.dispatch({
+      type: "MATCH_STARTED",
+      matchId,
     });
+    void startSetOnStartGG(matchId).catch((err: any) => {
+      log(`Failed to sync in-progress state to start.gg: ${err.response ?? err}`);
+    });
+  }
+
+  if (selectedStreamId && match.startggStreamId !== selectedStreamId) {
+    queueStartggStreamAssignment(matchId, selectedStreamId);
   }
 
   return res.json(store.getState()[matchId]);
@@ -486,7 +624,7 @@ app.post("/unassign", (req, res) => {
   }
 
   store.dispatch({
-    type: "MATCH_UNASSIGNED",
+    type: "SCOREBOARD_MATCH_CLEARED",
     matchId,
   });
 
@@ -505,7 +643,7 @@ app.post("/start", (req, res) => {
     return res.status(404).json({ error: "Match not found" });
   }
 
-  if (match.status !== "assigned") {
+  if (match.status !== "idle") {
     return res.status(409).json({
       error: `Match cannot be started from status: ${match.status}`,
     });
@@ -547,6 +685,40 @@ app.post("/updateScoreLocal", (req, res) => {
     matchId,
     score1,
     score2,
+  });
+
+  return res.json(store.getState()[matchId]);
+});
+
+app.post("/updateScoreDelta", (req, res) => {
+  const { matchId, player, delta } = req.body;
+
+  if (!matchId) {
+    return res.status(400).json({ error: "matchId is required" });
+  }
+  if ((player !== 1 && player !== 2) || (delta !== -1 && delta !== 1)) {
+    return res.status(400).json({
+      error: "player must be 1 or 2 and delta must be -1 or 1",
+    });
+  }
+
+  const match = store.getState()[matchId];
+  if (!match) {
+    return res.status(404).json({ error: "Match not found" });
+  }
+  if (match.status === "complete") {
+    return res.status(409).json({
+      error: `Cannot update score from status: ${match.status}`,
+    });
+  }
+
+  store.dispatch({
+    type: "SCORE_UPDATED",
+    matchId,
+    score1:
+      player === 1 ? Math.max(0, match.score1 + delta) : match.score1,
+    score2:
+      player === 2 ? Math.max(0, match.score2 + delta) : match.score2,
   });
 
   return res.json(store.getState()[matchId]);
@@ -682,7 +854,7 @@ app.post("/refresh", async (req, res) => {
 
 if (isProd) {
   // Exclude API, socket, scoreboard, draft-overlay, assets paths from catch-all
-  app.get(/^(?!\/socket\.io|\/api|\/scoreboard|\/draft-overlay|\/assets|\/streamdeck|\/draft).*/, (_req, res) => {
+  app.get(/^(?!\/socket\.io|\/api|\/scoreboard(?:\/|$)|\/draft-overlay|\/assets|\/streamdeck|\/draft).*/, (_req, res) => {
     res.sendFile(path.join(webDistPath, "index.html"));
   });
 }

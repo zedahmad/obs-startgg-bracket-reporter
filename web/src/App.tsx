@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 import {
-  assignMatch,
+  clearScoreboardMatch,
   createOfflineMatch,
   getAppState,
   getConfig,
@@ -12,13 +12,13 @@ import {
   saveResult,
   saveScoreboardSettings,
   saveStartggApiToken,
+  selectScoreboardMatch,
   showScoreboard,
   startMatch,
   submitFinalResult,
   swapScoreboardPlayers,
-  unassignMatch,
   updateOfflineMatch,
-  updateScore,
+  updateScoreDelta,
 } from "./api";
 import SettingsPane from "./SettingsPane";
 import type { ScoreboardSettings } from "./scoreboardSettings";
@@ -32,10 +32,7 @@ import type { Match, TournamentStream } from "./types";
 
 type AppMode = "startgg" | "offline";
 type SetupView = "choice" | AppMode;
-type ScoreboardDisplay = Record<
-  string,
-  { visible: boolean; swapped: boolean }
->;
+type ScoreboardDisplay = { visible: boolean; swapped: boolean };
 type SettingsSaveState = "idle" | "saving" | "saved" | "error";
 type ServerAppState = {
   mode: AppMode | null;
@@ -43,10 +40,261 @@ type ServerAppState = {
   streamsData: TournamentStream[];
 };
 
+type CountryFlagOption = {
+  code: string;
+  name: string;
+  flag: string;
+};
+
+function countryCodeToFlag(countryCode: string) {
+  return [...countryCode]
+    .map((character) =>
+      String.fromCodePoint(character.charCodeAt(0) + 127397),
+    )
+    .join("");
+}
+
+const ISO_COUNTRY_CODES = `
+  AD AE AF AG AI AL AM AO AQ AR AS AT AU AW AX AZ
+  BA BB BD BE BF BG BH BI BJ BL BM BN BO BQ BR BS BT BV BW BY BZ
+  CA CC CD CF CG CH CI CK CL CM CN CO CR CU CV CW CX CY CZ
+  DE DJ DK DM DO DZ
+  EC EE EG EH ER ES ET
+  FI FJ FK FM FO FR
+  GA GB GD GE GF GG GH GI GL GM GN GP GQ GR GS GT GU GW GY
+  HK HM HN HR HT HU
+  ID IE IL IM IN IO IQ IR IS IT
+  JE JM JO JP
+  KE KG KH KI KM KN KP KR KW KY KZ
+  LA LB LC LI LK LR LS LT LU LV LY
+  MA MC MD ME MF MG MH MK ML MM MN MO MP MQ MR MS MT MU MV MW MX MY MZ
+  NA NC NE NF NG NI NL NO NP NR NU NZ
+  OM
+  PA PE PF PG PH PK PL PM PN PR PS PT PW PY
+  QA
+  RE RO RS RU RW
+  SA SB SC SD SE SG SH SI SJ SK SL SM SN SO SR SS ST SV SX SY SZ
+  TC TD TF TG TH TJ TK TL TM TN TO TR TT TV TW TZ
+  UA UG UM US UY UZ
+  VA VC VE VG VI VN VU
+  WF WS
+  YE YT
+  ZA ZM ZW
+`.trim().split(/\s+/);
+
+const COUNTRY_FLAG_OPTIONS: CountryFlagOption[] = (() => {
+  const displayNames = new Intl.DisplayNames(["en"], { type: "region" });
+  return ISO_COUNTRY_CODES.map((code) => ({
+    code,
+    name: displayNames.of(code) ?? code,
+    flag: countryCodeToFlag(code),
+  })).sort((left, right) => left.name.localeCompare(right.name));
+})();
+
+type OfflinePlayerFieldsProps = {
+  idPrefix: string;
+  label: string;
+  name: string;
+  sponsor: string;
+  country: string;
+  autoFocus?: boolean;
+  onNameChange: (value: string) => void;
+  onSponsorChange: (value: string) => void;
+  onCountryChange: (value: string) => void;
+};
+
+type FlagPickerProps = {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+};
+
+function FlagPicker({ label, value, onChange }: FlagPickerProps) {
+  const [open, setOpen] = useState(false);
+  const [opensUp, setOpensUp] = useState(false);
+  const [query, setQuery] = useState("");
+  const rootRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const selectedFlag =
+    COUNTRY_FLAG_OPTIONS.find((option) => option.code === value)?.flag ?? "";
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const filteredOptions = normalizedQuery
+    ? COUNTRY_FLAG_OPTIONS.filter(
+        (option) =>
+          option.code.toLocaleLowerCase().includes(normalizedQuery) ||
+          option.name.toLocaleLowerCase().includes(normalizedQuery),
+      )
+    : COUNTRY_FLAG_OPTIONS;
+
+  useEffect(() => {
+    if (!open) return;
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus();
+    });
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+        setQuery("");
+      }
+    };
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+    };
+  }, [open]);
+
+  const selectCountry = (country: string) => {
+    onChange(country);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <div
+      className="offline-flag-picker"
+      ref={rootRef}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setOpen(false);
+          setQuery("");
+        }
+      }}
+    >
+      <button
+        className="offline-flag-picker-trigger"
+        type="button"
+        aria-label={`${label} country flag`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => {
+          if (open) {
+            setQuery("");
+            setOpen(false);
+            return;
+          }
+
+          const bounds = rootRef.current?.getBoundingClientRect();
+          setOpensUp(
+            Boolean(
+              bounds &&
+              bounds.bottom + 280 > window.innerHeight &&
+              bounds.top > 280,
+            ),
+          );
+          setOpen(true);
+        }}
+      >
+        {selectedFlag || "\u00a0"}
+      </button>
+      {open && (
+        <div
+          className={`offline-flag-options ${
+            opensUp ? "opens-up" : ""
+          }`}
+        >
+          <input
+            className="offline-flag-search"
+            ref={searchInputRef}
+            type="search"
+            value={query}
+            aria-label="Filter countries"
+            placeholder="Country or code"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <div
+            className="offline-flag-grid"
+            role="listbox"
+            aria-label={`${label} country flags`}
+          >
+            <button
+              className="offline-flag-option offline-flag-option-clear"
+              type="button"
+              role="option"
+              aria-label="No country flag"
+              aria-selected={!value}
+              title="No country flag"
+              onClick={() => selectCountry("")}
+            >
+              &times;
+            </button>
+            {filteredOptions.map((option) => (
+              <button
+                className="offline-flag-option"
+                type="button"
+                role="option"
+                key={option.code}
+                aria-label={`${option.name} (${option.code})`}
+                aria-selected={value === option.code}
+                title={`${option.name} (${option.code})`}
+                onClick={() => selectCountry(option.code)}
+              >
+                {option.flag}
+              </button>
+            ))}
+            {filteredOptions.length === 0 && (
+              <p className="offline-flag-empty">No countries found</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OfflinePlayerFields({
+  idPrefix,
+  label,
+  name,
+  sponsor,
+  country,
+  autoFocus = false,
+  onNameChange,
+  onSponsorChange,
+  onCountryChange,
+}: OfflinePlayerFieldsProps) {
+  return (
+    <>
+      <span className="field-label" id={`${idPrefix}-label`}>
+        {label}
+      </span>
+      <div
+        className="offline-player-fields"
+        aria-labelledby={`${idPrefix}-label`}
+      >
+        <FlagPicker
+          label={label}
+          value={country}
+          onChange={onCountryChange}
+        />
+        <input
+          className="offline-player-sponsor"
+          type="text"
+          value={sponsor}
+          maxLength={100}
+          aria-label={`${label} sponsor tag`}
+          placeholder="Sponsor"
+          onChange={(event) => onSponsorChange(event.target.value)}
+        />
+        <input
+          className="offline-player-name"
+          type="text"
+          value={name}
+          aria-label={`${label} name`}
+          placeholder={`${label} name`}
+          autoFocus={autoFocus}
+          onChange={(event) => onNameChange(event.target.value)}
+        />
+      </div>
+    </>
+  );
+}
+
 function getStatusLabel(status: Match["status"]) {
   const labels: Record<Match["status"], string> = {
     idle: "Queued",
-    assigned: "Assigned",
     live: "Live",
     saved: "Saved",
     complete: "Complete",
@@ -64,14 +312,19 @@ export default function App() {
   const [tokenInput, setTokenInput] = useState("");
   const [slugInput, setSlugInput] = useState("");
   const [player1Input, setPlayer1Input] = useState("");
+  const [player1SponsorInput, setPlayer1SponsorInput] = useState("");
+  const [player1CountryInput, setPlayer1CountryInput] = useState("");
   const [player2Input, setPlayer2Input] = useState("");
+  const [player2SponsorInput, setPlayer2SponsorInput] = useState("");
+  const [player2CountryInput, setPlayer2CountryInput] = useState("");
   const [matchLabelInput, setMatchLabelInput] = useState("Offline Match");
   const [scoreboardUrl, setScoreboardUrl] = useState("");
   const [savingConfig, setSavingConfig] = useState(false);
-  const [activeStreamId, setActiveStreamId] = useState("");
+  const [selectedStartggStreamId, setSelectedStartggStreamId] = useState("");
+  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [scoreboardDisplay, setScoreboardDisplay] =
-    useState<ScoreboardDisplay>({});
+    useState<ScoreboardDisplay>({ visible: true, swapped: false });
   const [scoreboardSettings, setScoreboardSettings] =
     useState<ScoreboardSettings | null>(null);
   const [scoreboardDefaults, setScoreboardDefaults] =
@@ -92,20 +345,9 @@ export default function App() {
   const previousServerModeRef = useRef<AppMode | null | undefined>(undefined);
 
   const currentMatch =
-    mode === "offline"
-      ? matches["offline-match"] ?? null
-      : activeStreamId
-        ? Object.values(matches).find(
-            (match) => match.streamId === activeStreamId,
-          ) ?? null
-        : null;
-
-  const scoreboardDisplayKey =
-    mode === "startgg" && activeStreamId ? activeStreamId : "default";
-  const displaySettings =
-    scoreboardDisplay[scoreboardDisplayKey] ?? scoreboardDisplay.default;
-  const playersSwapped = displaySettings?.swapped ?? false;
-  const scoreboardVisible = displaySettings?.visible ?? true;
+    Object.values(matches).find((match) => match.isScoreboardMatch) ?? null;
+  const playersSwapped = scoreboardDisplay.swapped ?? false;
+  const scoreboardVisible = scoreboardDisplay.visible ?? true;
   const displayedPlayer1 = currentMatch
     ? playersSwapped
       ? currentMatch.player2
@@ -132,13 +374,9 @@ export default function App() {
       match &&
       match.player1 &&
       match.player2 &&
-      !match.streamId &&
+      !match.isScoreboardMatch &&
       match.status !== "complete",
   );
-
-  const selectedStreamName =
-    streams.find((stream) => stream.id === activeStreamId)?.name ||
-    "Stream Control";
 
   const loadingStateComponent = (text: string) => (
     <div className="busy-overlay">
@@ -149,9 +387,9 @@ export default function App() {
     </div>
   );
 
-  const emptyStreamControlMatchComponent = (
-    title = "No match assigned",
-    description = "Assign a set from the queue to begin controlling this stream.",
+  const emptyScoreboardMatchComponent = (
+    title = "No match selected",
+    description = "Choose a set from the queue to show it on the scoreboard.",
   ) => (
     <div className="empty-state">
       <div className="empty-icon">+</div>
@@ -167,15 +405,10 @@ export default function App() {
 
     setMatches(nextMatches);
     setStreams(nextStreams);
-    setActiveStreamId((previousStreamId) => {
-      if (nextStreams.some((stream) => stream.id === previousStreamId)) {
-        return previousStreamId;
-      }
-
-      const assignedMatch = Object.values(nextMatches).find(
-        (match) => match.streamId,
-      );
-      return assignedMatch?.streamId ?? nextStreams[0]?.id ?? "";
+    setSelectedStartggStreamId((previousStreamId) => {
+      return nextStreams.some((stream) => stream.id === previousStreamId)
+        ? previousStreamId
+        : "";
     });
 
     if (state.mode === "offline" && offlineMatch) {
@@ -183,8 +416,28 @@ export default function App() {
       setPlayer1Input((draft) => reconcileOfflineInput(
         draft, previous?.player1.name, offlineMatch.player1.name,
       ));
+      setPlayer1SponsorInput((draft) => reconcileOfflineInput(
+        draft,
+        previous ? previous.player1.sponsor ?? "" : undefined,
+        offlineMatch.player1.sponsor ?? "",
+      ));
+      setPlayer1CountryInput((draft) => reconcileOfflineInput(
+        draft,
+        previous ? previous.player1.country ?? "" : undefined,
+        offlineMatch.player1.country ?? "",
+      ));
       setPlayer2Input((draft) => reconcileOfflineInput(
         draft, previous?.player2.name, offlineMatch.player2.name,
+      ));
+      setPlayer2SponsorInput((draft) => reconcileOfflineInput(
+        draft,
+        previous ? previous.player2.sponsor ?? "" : undefined,
+        offlineMatch.player2.sponsor ?? "",
+      ));
+      setPlayer2CountryInput((draft) => reconcileOfflineInput(
+        draft,
+        previous ? previous.player2.country ?? "" : undefined,
+        offlineMatch.player2.country ?? "",
       ));
       setMatchLabelInput((draft) => reconcileOfflineInput(
         draft, previous?.round, offlineMatch.round || "Offline Match",
@@ -215,18 +468,14 @@ export default function App() {
       if (nextMatches) {
         setMatches(nextMatches);
 
-        const matchesArray = Object.values(nextMatches) as Match[];
-        const matchForSelectedStream =
-          matchesArray.find((match) => match.streamId) ?? null;
-
-        setActiveStreamId((previousStreamId) => {
+        setSelectedStartggStreamId((previousStreamId) => {
           const previousStreamStillExists = nextStreams.some(
             (stream) => stream.id === previousStreamId,
           );
 
           return previousStreamStillExists
             ? previousStreamId
-            : matchForSelectedStream?.streamId || nextStreams[0]?.id || "";
+            : "";
         });
       }
     } catch (error) {
@@ -237,20 +486,20 @@ export default function App() {
     }
   };
 
-  const unassignStreamMatch = async () => {
+  const clearCurrentScoreboardMatch = async () => {
     if (!currentMatch) return;
 
     setIsBusy(true);
 
     try {
-      const updatedMatch = await unassignMatch(currentMatch.id);
+      const updatedMatch = await clearScoreboardMatch(currentMatch.id);
       setMatches((previousMatches) => ({
         ...previousMatches,
         [updatedMatch.id]: updatedMatch,
       }));
     } catch (error) {
-      console.error("Error unassigning stream match:", error);
-      alert("Failed to unassign the stream match.");
+      console.error("Error clearing scoreboard match:", error);
+      alert("Failed to clear the scoreboard match.");
     } finally {
       setIsBusy(false);
     }
@@ -280,7 +529,11 @@ export default function App() {
     try {
       const result = await createOfflineMatch(
         player1Input,
+        player1SponsorInput,
+        player1CountryInput,
         player2Input,
+        player2SponsorInput,
+        player2CountryInput,
         matchLabelInput,
       );
       const nextStreams = result.streamsData as TournamentStream[];
@@ -294,9 +547,13 @@ export default function App() {
 
       setMatches(result.matchesData);
       setStreams(nextStreams);
-      setActiveStreamId(nextStreams[0]?.id ?? "");
+      setSelectedStartggStreamId("");
       setPlayer1Input(offlineMatch.player1.name);
+      setPlayer1SponsorInput(offlineMatch.player1.sponsor ?? "");
+      setPlayer1CountryInput(offlineMatch.player1.country ?? "");
       setPlayer2Input(offlineMatch.player2.name);
+      setPlayer2SponsorInput(offlineMatch.player2.sponsor ?? "");
+      setPlayer2CountryInput(offlineMatch.player2.country ?? "");
       setMatchLabelInput(
         offlineMatch.round ?? "Offline Match",
       );
@@ -309,29 +566,93 @@ export default function App() {
     }
   };
 
-  const handleScoreUpdate = async (score1: number, score2: number) => {
-    if (!currentMatch) return;
+  const updateMatchState = (updatedMatch: Match) => {
+    setMatches((previousMatches) => ({
+      ...previousMatches,
+      [updatedMatch.id]: updatedMatch,
+    }));
+  };
 
+  const handleMatchScoreDelta = async (
+    match: Match,
+    player: 1 | 2,
+    delta: -1 | 1,
+  ) => {
     try {
-      const updatedMatch = await updateScore(currentMatch.id, score1, score2);
-      setMatches((previousMatches) => ({
-        ...previousMatches,
-        [updatedMatch.id]: updatedMatch,
-      }));
+      await updateScoreDelta(match.id, player, delta);
     } catch (error) {
       console.error("Failed to update score:", error);
       alert("Failed to update the score.");
     }
   };
 
-  const handleDisplayedScoreUpdate = async (
-    score1: number,
-    score2: number,
+  const handleStartMatch = async (match: Match) => {
+    setIsBusy(true);
+    try {
+      updateMatchState(await startMatch(match.id));
+    } catch (error) {
+      console.error("Failed to start match:", error);
+      alert("Failed to start the match.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleSaveMatch = async (match: Match) => {
+    setIsBusy(true);
+    try {
+      updateMatchState(await saveResult(match.id));
+    } catch (error) {
+      console.error("Failed to save match result:", error);
+      alert("Failed to save the match result.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleSubmitMatch = async (match: Match) => {
+    if (!window.confirm("Submit this final result to start.gg?")) return;
+
+    setIsBusy(true);
+    try {
+      updateMatchState(await submitFinalResult(match.id));
+      setExpandedMatchId((expandedId) =>
+        expandedId === match.id ? null : expandedId,
+      );
+      await refreshFromStartGG();
+    } catch (error) {
+      console.error("Failed to submit final match result:", error);
+      alert("Failed to submit the final match result.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleSelectScoreboardMatch = async (match: Match) => {
+    setIsBusy(true);
+    try {
+      await selectScoreboardMatch(
+        match.id,
+        selectedStartggStreamId || undefined,
+      );
+      setExpandedMatchId((expandedId) =>
+        expandedId === match.id ? null : expandedId,
+      );
+    } catch (error) {
+      console.error("Failed to select scoreboard match:", error);
+      alert("Failed to show the match on the scoreboard.");
+    } finally {
+      setIsBusy(false);
+    }
+  };
+
+  const handleDisplayedScoreDelta = async (
+    player: 1 | 2,
+    delta: -1 | 1,
   ) => {
-    await handleScoreUpdate(
-      playersSwapped ? score2 : score1,
-      playersSwapped ? score1 : score2,
-    );
+    if (!currentMatch) return;
+    const storedPlayer = playersSwapped ? (player === 1 ? 2 : 1) : player;
+    await handleMatchScoreDelta(currentMatch, storedPlayer, delta);
   };
 
   const handleUpdateOfflineMatch = async () => {
@@ -340,7 +661,11 @@ export default function App() {
     try {
       const updatedMatch = await updateOfflineMatch(
         player1Input,
+        player1SponsorInput,
+        player1CountryInput,
         player2Input,
+        player2SponsorInput,
+        player2CountryInput,
         matchLabelInput,
       );
       setMatches((previousMatches) => ({
@@ -477,9 +802,7 @@ export default function App() {
     setIsBusy(true);
 
     try {
-      await swapScoreboardPlayers(
-        scoreboardDisplayKey === "default" ? undefined : scoreboardDisplayKey,
-      );
+      await swapScoreboardPlayers();
     } catch (error) {
       console.error("Failed to swap scoreboard players:", error);
       alert("Failed to swap the scoreboard players.");
@@ -493,13 +816,9 @@ export default function App() {
 
     try {
       if (scoreboardVisible) {
-        await hideScoreboard(
-          scoreboardDisplayKey === "default" ? undefined : scoreboardDisplayKey,
-        );
+        await hideScoreboard();
       } else {
-        await showScoreboard(
-          scoreboardDisplayKey === "default" ? undefined : scoreboardDisplayKey,
-        );
+        await showScoreboard();
       }
     } catch (error) {
       console.error("Failed to update scoreboard visibility:", error);
@@ -585,15 +904,6 @@ export default function App() {
         <main className="app-shell setup-shell">
           {isBusy && loadingStateComponent("Processing...")}
           <section className="panel setup-panel">
-            <div className="setup-toolbar">
-              <button
-                className="button ghost"
-                type="button"
-                onClick={() => setSettingsOpen(true)}
-              >
-                Settings
-              </button>
-            </div>
           {setupView === "choice" && (
             <>
               <p className="eyebrow">Scoreboard setup</p>
@@ -610,7 +920,10 @@ export default function App() {
                 >
                   <span className="mode-card-icon">S</span>
                   <strong>Start.gg Tournament</strong>
-                  <span>Load bracket matches, streams, and result tools.</span>
+                  <span>
+                    Load bracket matches, result tools, and optional stream
+                    metadata.
+                  </span>
                 </button>
                 <button
                   className="mode-card"
@@ -707,27 +1020,27 @@ export default function App() {
                 match immediately.
               </p>
 
-              <label className="field-label" htmlFor="player-one">
-                Player 1
-              </label>
-              <input
-                id="player-one"
-                type="text"
-                value={player1Input}
-                onChange={(event) => setPlayer1Input(event.target.value)}
-                placeholder="Player 1 name"
+              <OfflinePlayerFields
+                idPrefix="player-one"
+                label="Player 1"
+                name={player1Input}
+                sponsor={player1SponsorInput}
+                country={player1CountryInput}
+                onNameChange={setPlayer1Input}
+                onSponsorChange={setPlayer1SponsorInput}
+                onCountryChange={setPlayer1CountryInput}
                 autoFocus
               />
 
-              <label className="field-label" htmlFor="player-two">
-                Player 2
-              </label>
-              <input
-                id="player-two"
-                type="text"
-                value={player2Input}
-                onChange={(event) => setPlayer2Input(event.target.value)}
-                placeholder="Player 2 name"
+              <OfflinePlayerFields
+                idPrefix="player-two"
+                label="Player 2"
+                name={player2Input}
+                sponsor={player2SponsorInput}
+                country={player2CountryInput}
+                onNameChange={setPlayer2Input}
+                onSponsorChange={setPlayer2SponsorInput}
+                onCountryChange={setPlayer2CountryInput}
               />
 
               <label className="field-label" htmlFor="match-label">
@@ -752,6 +1065,13 @@ export default function App() {
           )}
           </section>
         </main>
+        <button
+          className="button ghost persistent-settings-button"
+          type="button"
+          onClick={() => setSettingsOpen(true)}
+        >
+          Settings
+        </button>
         {settingsOpen && (
           <SettingsPane
             settings={scoreboardSettings}
@@ -780,7 +1100,7 @@ export default function App() {
           <h1>
             {mode === "offline"
               ? "Scoreboard Control"
-              : "Stream Control Dashboard"}
+              : "Tournament Dashboard"}
           </h1>
           <p className="hero-copy">
             {mode === "offline"
@@ -789,12 +1109,6 @@ export default function App() {
           </p>
         </div>
         <div className="hero-actions">
-          <button
-            className="button ghost"
-            onClick={() => setSettingsOpen(true)}
-          >
-            Settings
-          </button>
           {mode === "startgg" && (
             <button className="button secondary" onClick={refreshFromStartGG}>
               Refresh from start.gg
@@ -824,90 +1138,174 @@ export default function App() {
               </div>
 
               <label className="field-label" htmlFor="stream-select">
-                Choose Stream
+                Optional start.gg stream assignment
               </label>
               <select
                 id="stream-select"
-                value={activeStreamId}
-                onChange={(event) => setActiveStreamId(event.target.value)}
+                value={selectedStartggStreamId}
+                onChange={(event) =>
+                  setSelectedStartggStreamId(event.target.value)
+                }
               >
+                <option value="">Do not assign a start.gg stream</option>
                 {streams.map((stream) => (
                   <option key={stream.id} value={stream.id}>
                     {stream.name}
                   </option>
                 ))}
               </select>
+              <p className="field-help">
+                This only syncs start.gg metadata when a match is shown on the
+                scoreboard. It does not control which match OBS displays.
+              </p>
 
               <div className="queue-list">
                 {availableMatches.length === 0 &&
-                  emptyStreamControlMatchComponent(
+                  emptyScoreboardMatchComponent(
                     "No other matches available",
                     "Refresh start.gg or wait for both entrants to be known.",
                   )}
 
-                {availableMatches.map((match) => (
-                  <article className="match-card" key={match.id}>
-                    <div className="match-card-main">
-                      <div>
-                        <span className={`pill pill-${match.status}`}>
-                          {getStatusLabel(match.status)}
-                        </span>
-                        <h3>
-                          {match.player1?.name ?? "TBD"}{" "}
-                          <span className="muted-text">vs</span>{" "}
-                          {match.player2?.name ?? "TBD"}
-                        </h3>
-                        <p>{match.round}</p>
-                      </div>
-                    </div>
+                {availableMatches.map((match) => {
+                  const assignedStream = streams.find(
+                    (stream) => stream.id === match.startggStreamId,
+                  );
+                  const isExpanded = expandedMatchId === match.id;
 
-                    <button
-                      className="button"
-                      disabled={!activeStreamId}
-                      onClick={async () => {
-                        setIsBusy(true);
-
-                        try {
-                          const updatedMatch = await assignMatch(
-                            match.id,
-                            activeStreamId,
-                          );
-                          setMatches((previousMatches) => {
-                            const nextMatches = { ...previousMatches };
-
-                            for (const previousMatch of Object.values(
-                              nextMatches,
-                            )) {
-                              if (
-                                previousMatch.id !== updatedMatch.id &&
-                                previousMatch.streamId === activeStreamId
-                              ) {
-                                nextMatches[previousMatch.id] = {
-                                  ...previousMatch,
-                                  streamId: null,
-                                  status:
-                                    previousMatch.status === "assigned"
-                                      ? "idle"
-                                      : previousMatch.status,
-                                };
-                              }
-                            }
-
-                            nextMatches[updatedMatch.id] = updatedMatch;
-                            return nextMatches;
-                          });
-                        } catch (error) {
-                          console.error("Error assigning stream match:", error);
-                          alert("Failed to assign the stream match.");
-                        } finally {
-                          setIsBusy(false);
-                        }
-                      }}
+                  return (
+                    <article
+                      className={`match-card ${isExpanded ? "is-expanded" : ""}`}
+                      key={match.id}
                     >
-                      Show on Stream
-                    </button>
-                  </article>
-                ))}
+                      <div className="match-card-main">
+                        <div>
+                          <div className="match-card-badges">
+                            <span className={`pill pill-${match.status}`}>
+                              {getStatusLabel(match.status)}
+                            </span>
+                            {match.startggStreamId && (
+                              <span
+                                className={`stream-indicator ${
+                                  match.startggStreamId ===
+                                  selectedStartggStreamId
+                                    ? "is-selected"
+                                    : ""
+                                }`}
+                              >
+                                start.gg:{" "}
+                                {assignedStream?.name ?? "Assigned stream"}
+                              </span>
+                            )}
+                          </div>
+                          <h3>
+                            {match.player1?.name ?? "TBD"}{" "}
+                            <span className="muted-text">vs</span>{" "}
+                            {match.player2?.name ?? "TBD"}
+                          </h3>
+                          <p>{match.round}</p>
+                        </div>
+                        <div className="match-card-actions">
+                          <button
+                            className="button ghost"
+                            onClick={() =>
+                              setExpandedMatchId(isExpanded ? null : match.id)
+                            }
+                          >
+                            {isExpanded ? "Close" : "Manage"}
+                          </button>
+                          <button
+                            className="button"
+                            onClick={() => handleSelectScoreboardMatch(match)}
+                            aria-label="Show match on scoreboard"
+                            title="Show on Scoreboard"
+                          >
+                            Show
+                          </button>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="queue-match-controls">
+                          <div className="queue-score-grid">
+                            {[
+                              {
+                                player: match.player1,
+                                score: match.score1,
+                                onDecrease: () =>
+                                  handleMatchScoreDelta(match, 1, -1),
+                                onIncrease: () =>
+                                  handleMatchScoreDelta(match, 1, 1),
+                              },
+                              {
+                                player: match.player2,
+                                score: match.score2,
+                                onDecrease: () =>
+                                  handleMatchScoreDelta(match, 2, -1),
+                                onIncrease: () =>
+                                  handleMatchScoreDelta(match, 2, 1),
+                              },
+                            ].map((scoreControl) => (
+                              <div
+                                className="queue-player-score"
+                                key={scoreControl.player.id}
+                              >
+                                <span>{scoreControl.player.name}</span>
+                                <div className="compact-score-stepper">
+                                  <button
+                                    className="stepper-button"
+                                    disabled={
+                                      match.status === "idle" ||
+                                      scoreControl.score <= 0
+                                    }
+                                    onClick={scoreControl.onDecrease}
+                                  >
+                                    -
+                                  </button>
+                                  <strong>{scoreControl.score}</strong>
+                                  <button
+                                    className="stepper-button primary"
+                                    disabled={match.status === "idle"}
+                                    onClick={scoreControl.onIncrease}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="queue-match-actions">
+                            {match.status === "idle" && (
+                              <button
+                                className="button"
+                                onClick={() => handleStartMatch(match)}
+                              >
+                                Start Off-Stream Match
+                              </button>
+                            )}
+                            {match.status !== "idle" && (
+                              <>
+                                <button
+                                  className="button secondary"
+                                  onClick={() => handleSaveMatch(match)}
+                                >
+                                  Save Scores
+                                </button>
+                                <button
+                                  className="button danger"
+                                  disabled={match.score1 === match.score2}
+                                  onClick={() => handleSubmitMatch(match)}
+                                >
+                                  Submit Final Result
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })}
               </div>
             </>
           ) : (
@@ -921,31 +1319,61 @@ export default function App() {
                   handleUpdateOfflineMatch();
                 }}
               >
-                <label className="field-label" htmlFor="active-player-one">
-                  Player 1
-                </label>
-                <input
-                  id="active-player-one"
-                  type="text"
-                  value={playersSwapped ? player2Input : player1Input}
-                  onChange={(event) =>
+                <OfflinePlayerFields
+                  idPrefix="active-player-one"
+                  label="Player 1"
+                  name={playersSwapped ? player2Input : player1Input}
+                  sponsor={
                     playersSwapped
-                      ? setPlayer2Input(event.target.value)
-                      : setPlayer1Input(event.target.value)
+                      ? player2SponsorInput
+                      : player1SponsorInput
+                  }
+                  country={
+                    playersSwapped
+                      ? player2CountryInput
+                      : player1CountryInput
+                  }
+                  onNameChange={
+                    playersSwapped ? setPlayer2Input : setPlayer1Input
+                  }
+                  onSponsorChange={
+                    playersSwapped
+                      ? setPlayer2SponsorInput
+                      : setPlayer1SponsorInput
+                  }
+                  onCountryChange={
+                    playersSwapped
+                      ? setPlayer2CountryInput
+                      : setPlayer1CountryInput
                   }
                 />
 
-                <label className="field-label" htmlFor="active-player-two">
-                  Player 2
-                </label>
-                <input
-                  id="active-player-two"
-                  type="text"
-                  value={playersSwapped ? player1Input : player2Input}
-                  onChange={(event) =>
+                <OfflinePlayerFields
+                  idPrefix="active-player-two"
+                  label="Player 2"
+                  name={playersSwapped ? player1Input : player2Input}
+                  sponsor={
                     playersSwapped
-                      ? setPlayer1Input(event.target.value)
-                      : setPlayer2Input(event.target.value)
+                      ? player1SponsorInput
+                      : player2SponsorInput
+                  }
+                  country={
+                    playersSwapped
+                      ? player1CountryInput
+                      : player2CountryInput
+                  }
+                  onNameChange={
+                    playersSwapped ? setPlayer1Input : setPlayer2Input
+                  }
+                  onSponsorChange={
+                    playersSwapped
+                      ? setPlayer1SponsorInput
+                      : setPlayer2SponsorInput
+                  }
+                  onCountryChange={
+                    playersSwapped
+                      ? setPlayer1CountryInput
+                      : setPlayer2CountryInput
                   }
                 />
 
@@ -981,39 +1409,40 @@ export default function App() {
         <section className="panel control-panel">
           <div className="panel-header">
             <div>
-              <p className="eyebrow">{selectedStreamName}</p>
-              <h2>Stream Control</h2>
+              <p className="eyebrow">Live scoreboard</p>
+              <h2>Scoreboard Control</h2>
             </div>
             <div className="panel-header-actions">
               <button
-                className="button secondary"
-                disabled={!currentMatch}
-                onClick={handleSwapPlayers}
-              >
-                Swap Player Sides
-              </button>
-              <button
-                className={`button ${scoreboardVisible ? "ghost" : "danger"}`}
+                className={`button compact-action ${
+                  scoreboardVisible ? "ghost" : "danger"
+                }`}
                 disabled={!currentMatch}
                 onClick={handleScoreboardVisibility}
+                aria-label={
+                  scoreboardVisible ? "Hide scoreboard" : "Show scoreboard"
+                }
+                title={
+                  scoreboardVisible ? "Hide scoreboard" : "Show scoreboard"
+                }
               >
-                {scoreboardVisible
-                  ? "Hide Scoreboard"
-                  : "Scoreboard Hidden - Show"}
+                {scoreboardVisible ? "Hide" : "Show"}
               </button>
               {mode === "startgg" && (
                 <button
-                  className="button ghost"
+                  className="button ghost compact-action"
                   disabled={!currentMatch}
-                  onClick={unassignStreamMatch}
+                  onClick={clearCurrentScoreboardMatch}
+                  aria-label="Clear scoreboard match"
+                  title="Clear scoreboard match"
                 >
-                  Clear Scoreboard
+                  Clear
                 </button>
               )}
             </div>
           </div>
 
-          {!currentMatch && emptyStreamControlMatchComponent()}
+          {!currentMatch && emptyScoreboardMatchComponent()}
 
           {currentMatch && (
             <div className="control-stack">
@@ -1040,14 +1469,11 @@ export default function App() {
                       <button
                         className="stepper-button"
                         disabled={
-                          currentMatch.status === "assigned" ||
+                          currentMatch.status === "idle" ||
                           displayedScore1 <= 0
                         }
                         onClick={() =>
-                          handleDisplayedScoreUpdate(
-                            displayedScore1 - 1,
-                            displayedScore2,
-                          )
+                          handleDisplayedScoreDelta(1, -1)
                         }
                         aria-label={`Decrease ${displayedPlayer1?.name ?? "TBD"} score`}
                       >
@@ -1056,12 +1482,9 @@ export default function App() {
                       <span className="score-stepper-label">Score</span>
                       <button
                         className="stepper-button primary"
-                        disabled={currentMatch.status === "assigned"}
+                        disabled={currentMatch.status === "idle"}
                         onClick={() =>
-                          handleDisplayedScoreUpdate(
-                            displayedScore1 + 1,
-                            displayedScore2,
-                          )
+                          handleDisplayedScoreDelta(1, 1)
                         }
                         aria-label={`Increase ${displayedPlayer1?.name ?? "TBD"} score`}
                       >
@@ -1070,7 +1493,18 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="versus-divider">VS</div>
+                  <div className="versus-divider">
+                    <span>VS</span>
+                    <button
+                      className="inline-swap-button"
+                      type="button"
+                      onClick={handleSwapPlayers}
+                      aria-label="Swap player sides"
+                      title="Swap player sides"
+                    >
+                      Swap
+                    </button>
+                  </div>
 
                   <div
                     className={`player-score ${
@@ -1086,14 +1520,11 @@ export default function App() {
                       <button
                         className="stepper-button"
                         disabled={
-                          currentMatch.status === "assigned" ||
+                          currentMatch.status === "idle" ||
                           displayedScore2 <= 0
                         }
                         onClick={() =>
-                          handleDisplayedScoreUpdate(
-                            displayedScore1,
-                            displayedScore2 - 1,
-                          )
+                          handleDisplayedScoreDelta(2, -1)
                         }
                         aria-label={`Decrease ${displayedPlayer2?.name ?? "TBD"} score`}
                       >
@@ -1102,12 +1533,9 @@ export default function App() {
                       <span className="score-stepper-label">Score</span>
                       <button
                         className="stepper-button primary"
-                        disabled={currentMatch.status === "assigned"}
+                        disabled={currentMatch.status === "idle"}
                         onClick={() =>
-                          handleDisplayedScoreUpdate(
-                            displayedScore1,
-                            displayedScore2 + 1,
-                          )
+                          handleDisplayedScoreDelta(2, 1)
                         }
                         aria-label={`Increase ${displayedPlayer2?.name ?? "TBD"} score`}
                       >
@@ -1138,49 +1566,16 @@ export default function App() {
                 <div className="action-row">
                   <button
                     className="button"
-                    disabled={currentMatch.status !== "assigned"}
-                    onClick={async () => {
-                      setIsBusy(true);
-
-                      try {
-                        const updatedMatch = await startMatch(currentMatch.id);
-                        setMatches((previousMatches) => ({
-                          ...previousMatches,
-                          [updatedMatch.id]: updatedMatch,
-                        }));
-                      } catch (error) {
-                        console.error("Error starting stream match:", error);
-                        alert("Failed to start the stream match.");
-                      } finally {
-                        setIsBusy(false);
-                      }
-                    }}
+                    disabled={currentMatch.status !== "idle"}
+                    onClick={() => handleStartMatch(currentMatch)}
                   >
                     Start Match
                   </button>
 
                   <button
                     className="button secondary"
-                    disabled={currentMatch.status === "assigned"}
-                    onClick={async () => {
-                      setIsBusy(true);
-
-                      try {
-                        const updatedMatch = await saveResult(currentMatch.id);
-                        setMatches((previousMatches) => ({
-                          ...previousMatches,
-                          [updatedMatch.id]: updatedMatch,
-                        }));
-                      } catch (error) {
-                        console.error(
-                          "Error saving stream match result:",
-                          error,
-                        );
-                        alert("Failed to save the stream match result.");
-                      } finally {
-                        setIsBusy(false);
-                      }
-                    }}
+                    disabled={currentMatch.status === "idle"}
+                    onClick={() => handleSaveMatch(currentMatch)}
                   >
                     Save Result
                   </button>
@@ -1188,36 +1583,10 @@ export default function App() {
                   <button
                     className="button danger span-2"
                     disabled={
-                      currentMatch.status === "assigned" ||
+                      currentMatch.status === "idle" ||
                       currentMatch.score1 === currentMatch.score2
                     }
-                    onClick={async () => {
-                      const confirmed = window.confirm(
-                        "Submit this final result to start.gg?",
-                      );
-
-                      if (!confirmed) return;
-                      setIsBusy(true);
-
-                      try {
-                        const updatedMatch = await submitFinalResult(
-                          currentMatch.id,
-                        );
-                        setMatches((previousMatches) => ({
-                          ...previousMatches,
-                          [updatedMatch.id]: updatedMatch,
-                        }));
-                        await refreshFromStartGG();
-                      } catch (error) {
-                        console.error(
-                          "Error submitting stream match result:",
-                          error,
-                        );
-                        alert("Failed to submit the stream match result.");
-                      } finally {
-                        setIsBusy(false);
-                      }
-                    }}
+                    onClick={() => handleSubmitMatch(currentMatch)}
                   >
                     Submit Final Result
                   </button>
@@ -1228,6 +1597,13 @@ export default function App() {
         </section>
         </div>
       </main>
+      <button
+        className="button ghost persistent-settings-button"
+        type="button"
+        onClick={() => setSettingsOpen(true)}
+      >
+        Settings
+      </button>
       {settingsOpen && (
         <SettingsPane
           settings={scoreboardSettings}

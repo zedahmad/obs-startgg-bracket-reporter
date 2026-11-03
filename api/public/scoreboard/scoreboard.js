@@ -1,24 +1,37 @@
 (function () {
   "use strict";
 
-  // ── Config ────────────────────────────────────────────────────────────────
-
-  /** Read ?stream=<id> from URL; null = show first active match */
-  const params = new URLSearchParams(window.location.search);
-  const TARGET_STREAM_ID = params.get("stream") || null;
-  const TARGET_DISPLAY_KEY = TARGET_STREAM_ID || "default";
-
   // ── DOM refs ──────────────────────────────────────────────────────────────
 
-  const root        = document.getElementById("root");
+  const root        = document.getElementById("scoreboard-root");
   const p1Name      = document.getElementById("p1Name");
   const p2Name      = document.getElementById("p2Name");
+  const p1Flag      = document.getElementById("p1Flag");
+  const p2Flag      = document.getElementById("p2Flag");
+  const p1Sponsor   = document.getElementById("p1Sponsor");
+  const p2Sponsor   = document.getElementById("p2Sponsor");
+  const p1Separator = document.getElementById("p1SponsorSeparator");
+  const p2Separator = document.getElementById("p2SponsorSeparator");
+  const p1Tag       = document.getElementById("p1Tag");
+  const p2Tag       = document.getElementById("p2Tag");
   const p1Score     = document.getElementById("p1Score");
   const p2Score     = document.getElementById("p2Score");
-  const p1Losers    = document.getElementById("p1Losers");
-  const p2Losers    = document.getElementById("p2Losers");
   const matchLabel  = document.getElementById("matchLabel");
   const matchPill   = document.getElementById("matchPill");
+  const p1Identity  = {
+    container: p1Name,
+    flag: p1Flag,
+    sponsor: p1Sponsor,
+    separator: p1Separator,
+    tag: p1Tag,
+  };
+  const p2Identity  = {
+    container: p2Name,
+    flag: p2Flag,
+    sponsor: p2Sponsor,
+    separator: p2Separator,
+    tag: p2Tag,
+  };
 
   // ── State ─────────────────────────────────────────────────────────────────
 
@@ -26,6 +39,12 @@
   let swapped = false;
   let displayVisible = true;
   let playerNameBaseFontSize = 28;
+  let sponsorTagsEnabled = true;
+  let playerFlagsEnabled = false;
+  let sponsorTagSeparator = "|";
+  let sponsorTagSeparatorEnabled = false;
+  let countryCodeLookup = null;
+  let displayState = {};
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -47,13 +66,19 @@
 
   function applyScoreboardSettings(settings) {
     const rootStyle = document.documentElement.style;
+    const canvasStyle = root.style;
     const { canvas, text, elements } = settings;
 
     setPixelVariable("--canvas-width", canvas.width);
     setPixelVariable("--canvas-height", canvas.height);
+    canvasStyle.setProperty("--canvas-width", `${canvas.width}px`);
+    canvasStyle.setProperty("--canvas-height", `${canvas.height}px`);
     rootStyle.setProperty("--scoreboard-font-family", text.fontFamily);
     setPixelVariable("--player-name-size", text.playerNameSize);
     rootStyle.setProperty("--player-name-color", text.playerNameColor);
+    setPixelVariable("--sponsor-tag-size", text.sponsorTagSize);
+    rootStyle.setProperty("--sponsor-tag-color", text.sponsorTagColor);
+    rootStyle.setProperty("--sponsor-tag-weight", text.sponsorTagWeight);
     setPixelVariable("--score-size", text.scoreSize);
     rootStyle.setProperty("--score-color", text.scoreColor);
     setPixelVariable("--round-size", text.roundSize);
@@ -96,12 +121,22 @@
     );
 
     playerNameBaseFontSize = text.playerNameSize;
-    requestAnimationFrame(fitAllPlayerNames);
+    sponsorTagsEnabled = text.sponsorTagsEnabled;
+    playerFlagsEnabled = text.playerFlagsEnabled;
+    sponsorTagSeparator = text.sponsorTagSeparator;
+    sponsorTagSeparatorEnabled = text.sponsorTagSeparatorEnabled;
+
+    if (currentMatch) {
+      renderMatch(currentMatch);
+    } else {
+      requestAnimationFrame(fitAllPlayerNames);
+    }
   }
 
   function fitPlayerName(el) {
     const baseFontSize = playerNameBaseFontSize;
     const availableWidth = el.parentElement?.clientWidth ?? 0;
+
     el.style.fontSize = `${baseFontSize}px`;
     el.style.transform = "scaleX(1)";
 
@@ -120,16 +155,81 @@
     fitPlayerName(p2Name);
   }
 
-  function setTextFade(el, newText) {
-    if (el.textContent === newText) {
-      fitPlayerName(el);
+  function normalizeCountryName(country) {
+    return country
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+  }
+
+  function getCountryCodeLookup() {
+    if (countryCodeLookup) return countryCodeLookup;
+
+    countryCodeLookup = new Map([
+      ["england", "GB"],
+      ["northern ireland", "GB"],
+      ["scotland", "GB"],
+      ["united states of america", "US"],
+      ["wales", "GB"],
+    ]);
+
+    if (typeof Intl.DisplayNames !== "function") return countryCodeLookup;
+
+    const displayNames = new Intl.DisplayNames(["en"], { type: "region" });
+    for (let first = 65; first <= 90; first++) {
+      for (let second = 65; second <= 90; second++) {
+        const code = String.fromCharCode(first, second);
+        const countryName = displayNames.of(code);
+        if (countryName && countryName !== code) {
+          countryCodeLookup.set(normalizeCountryName(countryName), code);
+        }
+      }
+    }
+
+    return countryCodeLookup;
+  }
+
+  function countryToFlag(country) {
+    const normalizedCountry = country?.trim() || "";
+    const countryCode = /^[A-Za-z]{2}$/.test(normalizedCountry)
+      ? normalizedCountry.toUpperCase()
+      : getCountryCodeLookup().get(normalizeCountryName(normalizedCountry));
+
+    if (!countryCode) return "";
+
+    return [...countryCode]
+      .map((character) => String.fromCodePoint(character.charCodeAt(0) + 127397))
+      .join("");
+  }
+
+  function setPlayerIdentity(refs, player, fallbackName) {
+    const playerName = player?.name ?? fallbackName;
+    const sponsor = sponsorTagsEnabled ? player?.sponsor?.trim() || "" : "";
+    const flag = playerFlagsEnabled
+      ? countryToFlag(player?.country)
+      : "";
+    const separator =
+      sponsor && sponsorTagSeparatorEnabled ? sponsorTagSeparator : "";
+    const identity = JSON.stringify([flag, sponsor, separator, playerName]);
+
+    if (refs.container.dataset.identity === identity) {
+      fitPlayerName(refs.container);
       return;
     }
-    el.classList.add("changing");
+    refs.container.classList.add("changing");
     setTimeout(() => {
-      el.textContent = newText;
-      el.classList.remove("changing");
-      requestAnimationFrame(() => fitPlayerName(el));
+      refs.flag.textContent = flag;
+      refs.flag.hidden = !flag;
+      refs.sponsor.textContent = sponsor;
+      refs.sponsor.hidden = !sponsor;
+      refs.separator.textContent = separator;
+      refs.separator.hidden = !separator;
+      refs.tag.textContent = playerName;
+      refs.container.dataset.identity = identity;
+      refs.container.classList.remove("changing");
+      requestAnimationFrame(() => fitPlayerName(refs.container));
     }, 200);
   }
 
@@ -143,17 +243,15 @@
     }
   }
 
+  function applyDisplayState() {
+    swapped = displayState.swapped ?? false;
+    displayVisible = displayState.visible ?? true;
+  }
+
   function findMatch(matchMap) {
     if (!matchMap) return null;
-    const matches = Object.values(matchMap);
-    if (TARGET_STREAM_ID) {
-      return matches.find(
-        (m) => m.streamId === TARGET_STREAM_ID && m.status !== "complete"
-      ) || null;
-    }
-    // No stream specified — use only the match explicitly selected in the app.
-    return matches.find(
-      (m) => Boolean(m.streamId) && m.status !== "complete"
+    return Object.values(matchMap).find(
+      (match) => match.isScoreboardMatch && match.status !== "complete"
     ) || null;
   }
 
@@ -164,6 +262,7 @@
       return;
     }
 
+    applyDisplayState();
     const isNew = !currentMatch || currentMatch.id !== match.id;
 
     // Determine display sides (respect swap)
@@ -172,9 +271,9 @@
     const leftScore   = swapped ? match.score2  : match.score1;
     const rightScore  = swapped ? match.score1  : match.score2;
 
-    // Player names
-    setTextFade(p1Name, leftPlayer?.name ?? "P1");
-    setTextFade(p2Name, rightPlayer?.name ?? "P2");
+    // Player identity
+    setPlayerIdentity(p1Identity, leftPlayer, "P1");
+    setPlayerIdentity(p2Identity, rightPlayer, "P2");
 
     // Scores
     const prevLeft  = parseInt(p1Score.textContent, 10);
@@ -216,12 +315,9 @@
   });
 
   socket.on("scoreboard:display", (displayMap) => {
-    const state = displayMap[TARGET_DISPLAY_KEY] || displayMap["default"];
-    if (!state) return;
-
     const wasSwapped = swapped;
-    swapped = state.swapped ?? false;
-    displayVisible = state.visible ?? true;
+    displayState = displayMap || {};
+    applyDisplayState();
     updateVisibility(displayVisible && Boolean(currentMatch));
 
     // Re-render if swap changed

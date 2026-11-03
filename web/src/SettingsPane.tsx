@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { getSettingsChanges, mergeSettingsChanges } from "./settingsChanges";
-import ScoreboardPreview from "./ScoreboardPreview";
+import { applyPlayerCardSymmetry } from "./scoreboardSymmetry";
 import type {
   BackgroundSettings,
   PlayerBlockSettings,
@@ -10,6 +10,7 @@ import type {
 type AutoSaveState = "idle" | "saving" | "saved" | "error";
 
 type SettingsPaneProps = {
+  variant?: "application" | "editor";
   settings: ScoreboardSettings;
   defaults: ScoreboardSettings;
   hasSavedToken: boolean;
@@ -301,6 +302,7 @@ function settingsWithValidCustomCss(
 }
 
 export default function SettingsPane({
+  variant = "application",
   settings,
   defaults,
   hasSavedToken,
@@ -313,6 +315,7 @@ export default function SettingsPane({
   const [draft, setDraft] = useState(() => structuredClone(settings));
   const [previousSettings, setPreviousSettings] = useState(settings);
   const [apiToken, setApiToken] = useState("");
+  const editorMode = variant === "editor";
 
   if (previousSettings !== settings) {
     setPreviousSettings(settings);
@@ -326,11 +329,12 @@ export default function SettingsPane({
     nextDraft: ScoreboardSettings,
     options: { debounce?: boolean; apply?: boolean } = {},
   ) => {
-    setDraft(nextDraft);
+    const normalizedDraft = applyPlayerCardSymmetry(nextDraft);
+    setDraft(normalizedDraft);
 
     if (options.apply !== false) {
       onSettingsChange(
-        settingsWithValidCustomCss(nextDraft, settings),
+        settingsWithValidCustomCss(normalizedDraft, settings),
         options.debounce ?? false,
       );
     }
@@ -342,48 +346,12 @@ export default function SettingsPane({
     saved: "Changes applied",
     error: "Could not apply changes",
   }[autoSaveState];
-  const previewSettings = settingsWithValidCustomCss(draft, settings);
-
-  const applyPreviewGeometry = (
-    nextSettings: ScoreboardSettings,
-    apply: boolean,
-  ) => {
-    const mergePlayerGeometry = (
-      current: PlayerBlockSettings,
-      next: PlayerBlockSettings,
-    ) => ({
-      ...current,
-      x: next.x,
-      y: next.y,
-      width: next.width,
-      height: next.height,
-    });
-    const nextDraft = {
-      ...draft,
-      elements: {
-        player1: mergePlayerGeometry(
-          draft.elements.player1,
-          nextSettings.elements.player1,
-        ),
-        player2: mergePlayerGeometry(
-          draft.elements.player2,
-          nextSettings.elements.player2,
-        ),
-        round: {
-          ...draft.elements.round,
-          x: nextSettings.elements.round.x,
-          y: nextSettings.elements.round.y,
-          width: nextSettings.elements.round.width,
-          height: nextSettings.elements.round.height,
-        },
-      },
-    };
-
-    applyDraft(nextDraft, { apply });
-  };
-
   return (
-    <div className="settings-backdrop">
+    <div
+      className={`settings-backdrop ${
+        editorMode ? "scoreboard-editor-settings-backdrop" : ""
+      }`}
+    >
       <aside
         className="settings-pane"
         role="dialog"
@@ -393,8 +361,12 @@ export default function SettingsPane({
         <div className="settings-pane-layout">
           <header className="settings-header">
             <div>
-              <p className="eyebrow">Application settings</p>
-              <h2 id="settings-title">Scoreboard customization</h2>
+              <p className="eyebrow">
+                {editorMode ? "Visual editor" : "Application settings"}
+              </p>
+              <h2 id="settings-title">
+                {editorMode ? "Scoreboard customization" : "Settings"}
+              </h2>
             </div>
             <button
               className="button ghost"
@@ -406,53 +378,73 @@ export default function SettingsPane({
           </header>
 
           <div className="settings-content">
-            <section className="settings-section">
-              <div>
-                <p className="eyebrow">Connection</p>
-                <h3>start.gg</h3>
-              </div>
-              <form
-                className="settings-api-key-form"
-                onSubmit={async (event) => {
-                  event.preventDefault();
-                  if (await onSaveApiKey(apiToken)) {
-                    setApiToken("");
-                  }
-                }}
-              >
-                <label className="settings-field" htmlFor="settings-api-token">
-                  <span>API key</span>
-                  <input
-                    id="settings-api-token"
-                    type="password"
-                    value={apiToken}
-                    required
-                    placeholder={
-                      hasSavedToken ? "Enter a replacement key" : "start.gg API key"
-                    }
-                    onChange={(event) => setApiToken(event.target.value)}
-                  />
-                </label>
-                <button
-                  className="button"
-                  type="submit"
-                  disabled={savingApiKey || !apiToken.trim()}
-                >
-                  {savingApiKey ? "Saving..." : "Save API Key"}
-                </button>
-              </form>
-            </section>
+            {!editorMode && (
+              <>
+                <section className="settings-section">
+                  <div>
+                    <p className="eyebrow">Connection</p>
+                    <h3>start.gg</h3>
+                  </div>
+                  <form
+                    className="settings-api-key-form"
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      if (await onSaveApiKey(apiToken)) {
+                        setApiToken("");
+                      }
+                    }}
+                  >
+                    <label
+                      className="settings-field"
+                      htmlFor="settings-api-token"
+                    >
+                      <span>API key</span>
+                      <input
+                        id="settings-api-token"
+                        type="password"
+                        value={apiToken}
+                        required
+                        placeholder={
+                          hasSavedToken
+                            ? "Enter a replacement key"
+                            : "start.gg API key"
+                        }
+                        onChange={(event) => setApiToken(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      className="button"
+                      type="submit"
+                      disabled={savingApiKey || !apiToken.trim()}
+                    >
+                      {savingApiKey ? "Saving..." : "Save API Key"}
+                    </button>
+                  </form>
+                </section>
 
-            <ScoreboardPreview
-              settings={previewSettings}
-              onChange={(nextSettings) =>
-                applyPreviewGeometry(nextSettings, false)
-              }
-              onCommit={(nextSettings) =>
-                applyPreviewGeometry(nextSettings, true)
-              }
-            />
+                <section className="settings-section">
+                  <div>
+                    <p className="eyebrow">Scoreboard appearance</p>
+                    <h3>Visual editor</h3>
+                    <p className="settings-launch-copy">
+                      Open the full scoreboard canvas to position elements and
+                      customize its appearance.
+                    </p>
+                  </div>
+                  <a
+                    className="button settings-editor-link"
+                    href="/scoreboard-editor"
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Customize Scoreboard
+                  </a>
+                </section>
+              </>
+            )}
 
+            {editorMode && (
+              <>
             <section className="settings-section">
               <SectionHeading
                 eyebrow="Canvas"
@@ -608,6 +600,168 @@ export default function SettingsPane({
                   />
                 </label>
               </div>
+              <fieldset className="settings-subsection">
+                <legend>Player metadata</legend>
+                <div className="settings-section-actions">
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={draft.text.sponsorTagsEnabled}
+                      onChange={(event) =>
+                        applyDraft({
+                          ...draft,
+                          text: {
+                            ...draft.text,
+                            sponsorTagsEnabled: event.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <span>
+                      {draft.text.sponsorTagsEnabled
+                        ? "Sponsor tags enabled"
+                        : "Sponsor tags disabled"}
+                    </span>
+                  </label>
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={draft.text.sponsorTagSeparatorEnabled}
+                      onChange={(event) =>
+                        applyDraft({
+                          ...draft,
+                          text: {
+                            ...draft.text,
+                            sponsorTagSeparatorEnabled: event.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <span>
+                      {draft.text.sponsorTagSeparatorEnabled
+                        ? "Sponsor separator enabled"
+                        : "Sponsor separator disabled"}
+                    </span>
+                  </label>
+                  <label className="settings-toggle">
+                    <input
+                      type="checkbox"
+                      checked={draft.text.playerFlagsEnabled}
+                      onChange={(event) =>
+                        applyDraft({
+                          ...draft,
+                          text: {
+                            ...draft.text,
+                            playerFlagsEnabled: event.target.checked,
+                          },
+                        })
+                      }
+                    />
+                    <span>
+                      {draft.text.playerFlagsEnabled
+                        ? "Player flags enabled"
+                        : "Player flags disabled"}
+                    </span>
+                  </label>
+                </div>
+                <div className="settings-grid settings-grid-3">
+                  <NumberField
+                    id="sponsor-tag-size"
+                    label="Sponsor tag size"
+                    value={draft.text.sponsorTagSize}
+                    onChange={(sponsorTagSize) =>
+                      applyDraft({
+                        ...draft,
+                        text: { ...draft.text, sponsorTagSize },
+                      })
+                    }
+                  />
+                  <NumberField
+                    id="sponsor-tag-weight"
+                    label="Sponsor tag weight"
+                    value={draft.text.sponsorTagWeight}
+                    onChange={(sponsorTagWeight) =>
+                      applyDraft({
+                        ...draft,
+                        text: { ...draft.text, sponsorTagWeight },
+                      })
+                    }
+                  />
+                  <label className="settings-field" htmlFor="sponsor-tag-color">
+                    <span>Sponsor tag color</span>
+                    <input
+                      id="sponsor-tag-color"
+                      type="color"
+                      value={draft.text.sponsorTagColor}
+                      required
+                      onChange={(event) =>
+                        applyDraft({
+                          ...draft,
+                          text: {
+                            ...draft.text,
+                            sponsorTagColor: event.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                  <label
+                    className="settings-field"
+                    htmlFor="sponsor-tag-separator"
+                  >
+                    <span>Sponsor separator</span>
+                    <input
+                      id="sponsor-tag-separator"
+                      type="text"
+                      value={draft.text.sponsorTagSeparator}
+                      maxLength={20}
+                      disabled={!draft.text.sponsorTagSeparatorEnabled}
+                      onChange={(event) =>
+                        applyDraft({
+                          ...draft,
+                          text: {
+                            ...draft.text,
+                            sponsorTagSeparator: event.target.value,
+                          },
+                        })
+                      }
+                    />
+                  </label>
+                </div>
+              </fieldset>
+            </section>
+
+            <section className="settings-section">
+              <div className="settings-section-heading">
+                <div>
+                  <p className="eyebrow">Player card layout</p>
+                  <h3>Symmetry</h3>
+                </div>
+                <label className="settings-toggle">
+                  <input
+                    type="checkbox"
+                    checked={draft.layout.mirrorPlayerCards}
+                    onChange={(event) =>
+                      applyDraft({
+                        ...draft,
+                        layout: {
+                          ...draft.layout,
+                          mirrorPlayerCards: event.target.checked,
+                        },
+                      })
+                    }
+                  />
+                  <span>
+                    {draft.layout.mirrorPlayerCards
+                      ? "Player cards stay symmetrical"
+                      : "Player cards can be positioned independently"}
+                  </span>
+                </label>
+              </div>
+              <p className="settings-help-copy">
+                When enabled, Player 2 mirrors Player 1 across the canvas while
+                keeping its own background styling.
+              </p>
             </section>
 
             <PlayerBlockEditor
@@ -626,21 +780,23 @@ export default function SettingsPane({
               }
             />
 
-            <PlayerBlockEditor
-              idPrefix="player-two"
-              title="Player 2 name and score"
-              value={draft.elements.player2}
-              defaultValue={defaults.elements.player2}
-              onChange={(player2, options) =>
-                applyDraft(
-                  {
-                    ...draft,
-                    elements: { ...draft.elements, player2 },
-                  },
-                  options,
-                )
-              }
-            />
+            {!draft.layout.mirrorPlayerCards && (
+              <PlayerBlockEditor
+                idPrefix="player-two"
+                title="Player 2 name and score"
+                value={draft.elements.player2}
+                defaultValue={defaults.elements.player2}
+                onChange={(player2, options) =>
+                  applyDraft(
+                    {
+                      ...draft,
+                      elements: { ...draft.elements, player2 },
+                    },
+                    options,
+                  )
+                }
+              />
+            )}
 
             <section className="settings-section">
               <SectionHeading
@@ -742,13 +898,17 @@ export default function SettingsPane({
                 }
               />
             </section>
+              </>
+            )}
           </div>
 
           <footer className="settings-footer">
             <span
               className={`settings-save-status settings-save-${autoSaveState}`}
             >
-              {autoSaveLabel}
+              {editorMode
+                ? autoSaveLabel
+                : "Scoreboard customization opens in a separate tab"}
             </span>
             <button className="button" type="button" onClick={onClose}>
               Done

@@ -2,12 +2,24 @@
    SCOREBOARD OVERLAY — layout variables
    Adjust these to reposition/resize elements without touching anything else.
    ============================================================================= */
+@font-face {
+  font-family: "Twemoji Country Flags";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("/fonts/country-flags/TwemojiCountryFlags.woff2") format("woff2");
+  unicode-range: U+1f1e6-1f1ff;
+}
+
 :root {
   --canvas-width: 1920px;
   --canvas-height: 1080px;
   --scoreboard-font-family: "Barlow Condensed", sans-serif;
-  --player-name-size: 28px;
+  --player-name-size: 30px;
   --player-name-color: #fff;
+  --sponsor-tag-size: 24px;
+  --sponsor-tag-color: #b8c7e0;
+  --sponsor-tag-weight: 700;
   --score-size: 38px;
   --score-color: #111;
   --round-size: 18px;
@@ -17,7 +29,7 @@
   --p1-y: 140px;
   --p1-width: 368px;
   --p1-height: 60px;
-  --p1-score-width: 68px;
+  --p1-score-width: 60px;
   --p1-name-background: linear-gradient(270deg, #527aa0, #4f4c83);
   --p1-score-background: linear-gradient(90deg, #fff, #fff);
   --p1-display: flex;
@@ -26,7 +38,7 @@
   --p2-y: 140px;
   --p2-width: 368px;
   --p2-height: 60px;
-  --p2-score-width: 68px;
+  --p2-score-width: 60px;
   --p2-name-background: linear-gradient(90deg, #527aa0, #4f4c83);
   --p2-score-background: linear-gradient(90deg, #fff, #fff);
   --p2-display: flex;
@@ -35,37 +47,42 @@
   --round-y: 158px;
   --round-width: 194px;
   --round-height: 32px;
-  --round-background: linear-gradient(90deg, #8b2a75, #d00a69);
+  --round-background: linear-gradient(90deg, #d00a69, #d00a69);
   --round-display: block;
 }
 
 /* =============================================================================
    Base
    ============================================================================= */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+.scoreboard-canvas,
+.scoreboard-canvas *,
+.scoreboard-canvas *::before,
+.scoreboard-canvas *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
 
-html,
-body {
+body.scoreboard-live {
+  margin: 0;
   width: var(--canvas-width);
   height: var(--canvas-height);
   overflow: hidden;
-}
-
-body {
   background: transparent;
-  font-family: var(--scoreboard-font-family);
 }
 
-#root {
+.scoreboard-canvas {
   position: relative;
   width: var(--canvas-width);
   height: var(--canvas-height);
+  overflow: hidden;
+  font-family: var(--scoreboard-font-family);
   pointer-events: none;
   transition: opacity 0.4s ease;
 }
 
-#root.hidden  { opacity: 0; }
-#root.visible { opacity: 1; }
+.scoreboard-canvas.hidden  { opacity: 0; }
+.scoreboard-canvas.visible { opacity: 1; }
 
 /* =============================================================================
    ① Match info — centered at top, hangs down
@@ -148,8 +165,8 @@ body {
   background: var(--p1-name-background);
   border-radius: 0 0 0 4px;
   border-top-left-radius: 24px 24px;
-  padding-left: 8px;
-  padding-right: 8px;
+  padding-left: 12px;
+  padding-right: 12px;
 }
 
 /* P2: rounded rect, outer corners rounded */
@@ -159,8 +176,8 @@ body {
   background: var(--p2-name-background);
   border-radius: 0 0 4px 0;
   border-top-right-radius: 24px 24px;
-  padding-right: 8px;
-  padding-left: 8px;
+  padding-right: 12px;
+  padding-left: 12px;
 }
 
 /* ── Player name ─────────────────────────────────────────────────────────── */
@@ -204,6 +221,37 @@ body {
 }
 
 .player-name-text.changing { opacity: 0; }
+
+.player-flag {
+  flex-shrink: 0;
+  font-family:
+    "Twemoji Country Flags",
+    "Segoe UI Emoji",
+    "Apple Color Emoji",
+    sans-serif;
+  font-size: calc(var(--player-name-size) * 0.8);
+  font-weight: 400;
+}
+
+.sponsor-tag,
+.sponsor-separator {
+  color: var(--sponsor-tag-color);
+  font-size: var(--sponsor-tag-size);
+  font-weight: var(--sponsor-tag-weight);
+}
+
+.sponsor-tag:not([hidden]),
+.sponsor-separator:not([hidden]) {
+  margin-right: 0.3em;
+}
+
+.name-panel.p2 .player-tag {
+  margin-right: 0.3em;
+}
+
+.name-panel.p2 .sponsor-tag {
+  margin-right: 0;
+}
 
 /* ── Losers bracket badge ────────────────────────────────────────────────── */
 

@@ -1,6 +1,14 @@
 export type OfflineDetails = {
-  player1: { name: string };
-  player2: { name: string };
+  player1: {
+    name: string;
+    sponsor?: string | null;
+    country?: string | null;
+  };
+  player2: {
+    name: string;
+    sponsor?: string | null;
+    country?: string | null;
+  };
   round: string;
 };
 

@@ -1,7 +1,10 @@
 import axios from "axios";
 import type { SettingsChanges } from "./settingsChanges";
 
-export const assignMatch = async (matchId: string, streamId: string) => {
+export const selectScoreboardMatch = async (
+  matchId: string,
+  streamId?: string,
+) => {
   const res = await axios.post(`/assign`, {
     matchId,
     streamId,
@@ -10,7 +13,7 @@ export const assignMatch = async (matchId: string, streamId: string) => {
   return res.data;
 };
 
-export const unassignMatch = async (matchId: string) => {
+export const clearScoreboardMatch = async (matchId: string) => {
   const res = await axios.post(`/unassign`, {
     matchId,
   });
@@ -40,6 +43,20 @@ export const updateScore = async (
   return res.data;
 };
 
+export const updateScoreDelta = async (
+  matchId: string,
+  player: 1 | 2,
+  delta: -1 | 1,
+) => {
+  const res = await axios.post(`/updateScoreDelta`, {
+    matchId,
+    player,
+    delta,
+  });
+
+  return res.data;
+};
+
 export const resetScore = async (matchId: string) => {
   const res = await axios.post(`/resetScore`, {
     matchId,
@@ -50,12 +67,20 @@ export const resetScore = async (matchId: string) => {
 
 export const createOfflineMatch = async (
   player1Name: string,
+  player1Sponsor: string,
+  player1Country: string,
   player2Name: string,
+  player2Sponsor: string,
+  player2Country: string,
   matchLabel: string,
 ) => {
   const res = await axios.post(`/offline`, {
     player1Name,
+    player1Sponsor,
+    player1Country,
     player2Name,
+    player2Sponsor,
+    player2Country,
     matchLabel,
   });
 
@@ -64,12 +89,20 @@ export const createOfflineMatch = async (
 
 export const updateOfflineMatch = async (
   player1Name: string,
+  player1Sponsor: string,
+  player1Country: string,
   player2Name: string,
+  player2Sponsor: string,
+  player2Country: string,
   matchLabel: string,
 ) => {
   const res = await axios.post(`/offline/update`, {
     player1Name,
+    player1Sponsor,
+    player1Country,
     player2Name,
+    player2Sponsor,
+    player2Country,
     matchLabel,
   });
 
@@ -145,17 +178,17 @@ export const saveStartggApiToken = async (startggApiToken: string) => {
   return res.data;
 };
 
-export const swapScoreboardPlayers = async (streamId?: string) => {
-  const res = await axios.post(`/streamdeck/swap`, { streamId });
+export const swapScoreboardPlayers = async () => {
+  const res = await axios.post(`/streamdeck/swap`);
   return res.data;
 };
 
-export const showScoreboard = async (streamId?: string) => {
-  const res = await axios.post(`/streamdeck/scoreboard/show`, { streamId });
+export const showScoreboard = async () => {
+  const res = await axios.post(`/streamdeck/scoreboard/show`);
   return res.data;
 };
 
-export const hideScoreboard = async (streamId?: string) => {
-  const res = await axios.post(`/streamdeck/scoreboard/hide`, { streamId });
+export const hideScoreboard = async () => {
+  const res = await axios.post(`/streamdeck/scoreboard/hide`);
   return res.data;
 };

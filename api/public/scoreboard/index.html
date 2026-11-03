@@ -8,8 +8,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="scoreboard.css" />
 </head>
-<body>
-  <div id="root" class="hidden">
+<body class="scoreboard-live">
+  <div id="scoreboard-root" class="scoreboard-canvas hidden">
 
     <!-- ① Match info — independently positioned -->
     <div id="match-info">
@@ -20,8 +20,13 @@
     <div id="p1-block">
       <div class="name-panel p1">
         <div class="losers-badge" id="p1Losers">L</div>
+        <span class="player-flag" id="p1Flag" hidden></span>
         <div class="player-name">
-          <span class="player-name-text" id="p1Name">Player 1</span>
+          <span class="player-name-text" id="p1Name">
+            <span class="sponsor-tag" id="p1Sponsor" hidden></span>
+            <span class="sponsor-separator" id="p1SponsorSeparator" hidden></span>
+            <span class="player-tag" id="p1Tag">Player 1</span>
+          </span>
         </div>
       </div>
       <div class="score-box">
@@ -36,9 +41,14 @@
       </div>
       <div class="name-panel p2">
         <div class="player-name">
-          <span class="player-name-text" id="p2Name">Player 2</span>
+          <span class="player-name-text" id="p2Name">
+            <span class="player-tag" id="p2Tag">Player 2</span>
+            <span class="sponsor-separator" id="p2SponsorSeparator" hidden></span>
+            <span class="sponsor-tag" id="p2Sponsor" hidden></span>
+          </span>
         </div>
         <div class="losers-badge" id="p2Losers">L</div>
+        <span class="player-flag" id="p2Flag" hidden></span>
       </div>
     </div>
 

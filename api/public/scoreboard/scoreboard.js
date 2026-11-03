@@ -16,6 +16,8 @@
   const p2Tag       = document.getElementById("p2Tag");
   const p1Score     = document.getElementById("p1Score");
   const p2Score     = document.getElementById("p2Score");
+  const p1Characters = document.getElementById("p1Characters");
+  const p2Characters = document.getElementById("p2Characters");
   const matchLabel  = document.getElementById("matchLabel");
   const matchPill   = document.getElementById("matchPill");
   const p1Identity  = {
@@ -36,6 +38,7 @@
   // ── State ─────────────────────────────────────────────────────────────────
 
   let currentMatch = null;
+  let currentDraft = null;
   let swapped = false;
   let displayVisible = true;
   let playerNameBaseFontSize = 28;
@@ -105,6 +108,20 @@
         `--${key}-score-background`,
         backgroundValue(element.scoreBackground),
       );
+    }
+
+    for (const [key, element] of [
+      ["p1", elements.player1Characters],
+      ["p2", elements.player2Characters],
+    ]) {
+      rootStyle.setProperty(
+        `--${key}-characters-display`,
+        element.enabled ? "flex" : "none",
+      );
+      setPixelVariable(`--${key}-characters-x`, element.x);
+      setPixelVariable(`--${key}-characters-y`, element.y);
+      setPixelVariable(`--${key}-characters-width`, element.width);
+      setPixelVariable(`--${key}-characters-height`, element.height);
     }
 
     setPixelVariable("--round-x", elements.round.x);
@@ -255,10 +272,78 @@
     ) || null;
   }
 
+  function renderCharacterRail(container, picks, defeated, isRight, ruleset) {
+    const characters = picks
+      .map((codename) =>
+        ruleset.characters.find((character) => character.codename === codename)
+      )
+      .filter(Boolean);
+    const ordered = isRight ? [...characters].reverse() : characters;
+    const defeatedSet = new Set(defeated);
+
+    container.innerHTML = "";
+    container.hidden = ordered.length === 0;
+    for (const character of ordered) {
+      const slot = document.createElement("div");
+      slot.className = `character-icon${
+        defeatedSet.has(character.codename) ? " is-defeated" : ""
+      }`;
+
+      const image = document.createElement("img");
+      image.src = character.imagePath;
+      image.alt = character.displayName;
+      slot.appendChild(image);
+      container.appendChild(slot);
+    }
+  }
+
+  function renderDraft() {
+    if (
+      !currentMatch ||
+      !currentDraft ||
+      currentDraft.phase === "idle" ||
+      currentDraft.matchId !== currentMatch.id ||
+      !currentDraft.ruleset
+    ) {
+      p1Characters.hidden = true;
+      p2Characters.hidden = true;
+      return;
+    }
+
+    const leftPicks = swapped
+      ? currentDraft.teamBPicks
+      : currentDraft.teamAPicks;
+    const rightPicks = swapped
+      ? currentDraft.teamAPicks
+      : currentDraft.teamBPicks;
+    const leftDefeated = swapped
+      ? currentDraft.teamBDefeated
+      : currentDraft.teamADefeated;
+    const rightDefeated = swapped
+      ? currentDraft.teamADefeated
+      : currentDraft.teamBDefeated;
+
+    renderCharacterRail(
+      p1Characters,
+      leftPicks,
+      leftDefeated,
+      false,
+      currentDraft.ruleset,
+    );
+    renderCharacterRail(
+      p2Characters,
+      rightPicks,
+      rightDefeated,
+      true,
+      currentDraft.ruleset,
+    );
+  }
+
   function renderMatch(match) {
     if (!match) {
       updateVisibility(false);
       currentMatch = null;
+      renderDraft();
       return;
     }
 
@@ -298,6 +383,7 @@
     }
 
     currentMatch = match;
+    renderDraft();
     updateVisibility(displayVisible);
   }
 
@@ -328,6 +414,11 @@
 
   socket.on("scoreboard:settings", (settings) => {
     applyScoreboardSettings(settings);
+  });
+
+  socket.on("draft:update", (state) => {
+    currentDraft = state;
+    renderDraft();
   });
 
   socket.on("disconnect", () => {

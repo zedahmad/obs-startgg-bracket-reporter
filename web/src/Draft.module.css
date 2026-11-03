@@ -159,6 +159,9 @@
 /* ── Buttons ──────────────────────────────────────────────────────────────── */
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 8px;
   padding: 10px 20px;
@@ -168,6 +171,7 @@
   min-height: 44px;
   transition: filter 0.15s, transform 0.1s;
   -webkit-tap-highlight-color: transparent;
+  text-decoration: none;
 }
 
 .btn:hover  { filter: brightness(1.15); }
@@ -384,6 +388,13 @@
   font-weight: 800;
   color: #fff;
   letter-spacing: 2px;
+}
+
+.idleRoot p {
+  max-width: 520px;
+  color: #aaa;
+  line-height: 1.5;
+  text-align: center;
 }
 
 .idleInputRow {

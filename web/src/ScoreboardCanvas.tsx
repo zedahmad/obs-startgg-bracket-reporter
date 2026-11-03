@@ -16,10 +16,19 @@ type PlayerPreview = {
   score: number;
 };
 
+type CharacterPreview = {
+  codename: string;
+  displayName: string;
+  imagePath: string;
+  defeated?: boolean;
+};
+
 type ScoreboardCanvasProps = {
   settings: ScoreboardSettings;
   player1?: PlayerPreview;
   player2?: PlayerPreview;
+  player1Characters?: CharacterPreview[];
+  player2Characters?: CharacterPreview[];
   round?: string;
   className?: string;
 };
@@ -71,6 +80,42 @@ export default function ScoreboardCanvas({
     countryCode: "JP",
     score: 1,
   },
+  player1Characters = [
+    {
+      codename: "Ryu",
+      displayName: "Ryu",
+      imagePath: "/assets/characters/sf3ts/Ryu.png",
+      defeated: true,
+    },
+    {
+      codename: "Chun-Li",
+      displayName: "Chun-Li",
+      imagePath: "/assets/characters/sf3ts/Chun-Li.png",
+    },
+    {
+      codename: "Ken",
+      displayName: "Ken",
+      imagePath: "/assets/characters/sf3ts/Ken.png",
+    },
+  ],
+  player2Characters = [
+    {
+      codename: "Yun",
+      displayName: "Yun",
+      imagePath: "/assets/characters/sf3ts/Yun.png",
+    },
+    {
+      codename: "Makoto",
+      displayName: "Makoto",
+      imagePath: "/assets/characters/sf3ts/Makoto.png",
+    },
+    {
+      codename: "Dudley",
+      displayName: "Dudley",
+      imagePath: "/assets/characters/sf3ts/Dudley.png",
+      defeated: true,
+    },
+  ],
   round = "WINNERS FINAL",
   className = "",
 }: ScoreboardCanvasProps) {
@@ -141,6 +186,20 @@ export default function ScoreboardCanvas({
       elements.player2.scoreBackground,
     ),
     "--p2-display": elements.player2.enabled ? "flex" : "none",
+    "--p1-characters-x": `${elements.player1Characters.x}px`,
+    "--p1-characters-y": `${elements.player1Characters.y}px`,
+    "--p1-characters-width": `${elements.player1Characters.width}px`,
+    "--p1-characters-height": `${elements.player1Characters.height}px`,
+    "--p1-characters-display": elements.player1Characters.enabled
+      ? "flex"
+      : "none",
+    "--p2-characters-x": `${elements.player2Characters.x}px`,
+    "--p2-characters-y": `${elements.player2Characters.y}px`,
+    "--p2-characters-width": `${elements.player2Characters.width}px`,
+    "--p2-characters-height": `${elements.player2Characters.height}px`,
+    "--p2-characters-display": elements.player2Characters.enabled
+      ? "flex"
+      : "none",
     "--round-x": `${elements.round.x}px`,
     "--round-y": `${elements.round.y}px`,
     "--round-width": `${elements.round.width}px`,
@@ -233,6 +292,48 @@ export default function ScoreboardCanvas({
             {countryCodeToFlag(player2.countryCode)}
           </span>
         </div>
+      </div>
+
+      <div
+        className="character-rail p1"
+        id="p1Characters"
+        hidden={player1Characters.length === 0}
+      >
+        {player1Characters.map((character) => (
+          <div
+            className={`character-icon ${
+              character.defeated ? "is-defeated" : ""
+            }`}
+            key={character.codename}
+          >
+            <img
+              src={character.imagePath}
+              alt={character.displayName}
+              draggable={false}
+            />
+          </div>
+        ))}
+      </div>
+
+      <div
+        className="character-rail p2"
+        id="p2Characters"
+        hidden={player2Characters.length === 0}
+      >
+        {[...player2Characters].reverse().map((character) => (
+          <div
+            className={`character-icon ${
+              character.defeated ? "is-defeated" : ""
+            }`}
+            key={character.codename}
+          >
+            <img
+              src={character.imagePath}
+              alt={character.displayName}
+              draggable={false}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );

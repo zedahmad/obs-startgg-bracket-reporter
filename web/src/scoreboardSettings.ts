@@ -25,6 +25,14 @@ export type RoundBlockSettings = {
   background: BackgroundSettings;
 };
 
+export type CharacterRailSettings = {
+  enabled: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type ScoreboardSettings = {
   canvas: {
     width: number;
@@ -52,6 +60,8 @@ export type ScoreboardSettings = {
   elements: {
     player1: PlayerBlockSettings;
     player2: PlayerBlockSettings;
+    player1Characters: CharacterRailSettings;
+    player2Characters: CharacterRailSettings;
     round: RoundBlockSettings;
   };
 };

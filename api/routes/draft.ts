@@ -4,6 +4,33 @@ import fs from "fs";
 import { draftStore } from "../core/draftStore";
 import { DraftRuleset } from "../core/draftTypes";
 import { Server } from "socket.io";
+import type { Match } from "../core/types";
+
+type DraftMatchOperations = {
+  prepareMatch: (matchId: string, streamId?: unknown) => Match;
+  adjustScore: (
+    matchId: string,
+    player: 1 | 2,
+    delta: -1 | 1,
+  ) => Match;
+};
+
+function errorStatus(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof error.status === "number"
+  ) {
+    return error.status;
+  }
+
+  return 500;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : "Unexpected error";
+}
 
 function getRulesetPath(): string {
   if ((process as any).pkg) return path.join(path.dirname(process.execPath), "config", "ruleset.json");
@@ -19,7 +46,10 @@ function loadRuleset(): DraftRuleset {
   return JSON.parse(raw) as DraftRuleset;
 }
 
-export function createDraftRouter(io: Server) {
+export function createDraftRouter(
+  io: Server,
+  matchOperations: DraftMatchOperations,
+) {
   const router = Router();
 
   draftStore.subscribe(() => {
@@ -31,15 +61,69 @@ export function createDraftRouter(io: Server) {
     return res.json(draftStore.getState());
   });
 
-  // POST /draft/start — begin a new draft, goes to rps phase
+  // POST /draft/start — select/start a match and begin a linked draft
   router.post("/start", (req, res) => {
-    const { team1Name, team2Name } = req.body ?? {};
+    const { matchId, streamId } = req.body ?? {};
+    if (typeof matchId !== "string" || !matchId.trim()) {
+      return res.status(400).json({ error: "matchId is required" });
+    }
+
     try {
       const ruleset = loadRuleset();
-      draftStore.start(ruleset, team1Name ?? "Team 1", team2Name ?? "Team 2");
-      return res.json(draftStore.getState());
-    } catch (err: any) {
-      return res.status(500).json({ error: "Failed to load ruleset", details: err.message });
+      const match = matchOperations.prepareMatch(matchId.trim(), streamId);
+      draftStore.start(
+        ruleset,
+        match.id,
+        match.player1.name,
+        match.player2.name,
+      );
+      return res.json({
+        draft: draftStore.getState(),
+        match,
+      });
+    } catch (error) {
+      return res.status(errorStatus(error)).json({
+        error: errorMessage(error),
+      });
+    }
+  });
+
+  // POST /draft/defeat — toggle a drafted character and adjust opponent score
+  router.post("/defeat", (req, res) => {
+    const { team, codename } = req.body ?? {};
+    if ((team !== 0 && team !== 1) || typeof codename !== "string") {
+      return res.status(400).json({
+        error: "team must be 0 or 1 and codename is required",
+      });
+    }
+
+    const state = draftStore.getState();
+    if (!state.matchId) {
+      return res.status(409).json({ error: "No match is linked to the draft" });
+    }
+
+    const becameDefeated = draftStore.toggleDefeated(team, codename);
+    if (becameDefeated === null) {
+      return res.status(409).json({
+        error: "Only drafted characters can be toggled after the draft is complete",
+      });
+    }
+
+    try {
+      const match = matchOperations.adjustScore(
+        state.matchId,
+        team === 0 ? 2 : 1,
+        becameDefeated ? 1 : -1,
+      );
+      return res.json({
+        draft: draftStore.getState(),
+        match,
+      });
+    } catch (error) {
+      draftStore.toggleDefeated(team, codename);
+      return res.status(errorStatus(error)).json({
+        error: errorMessage(error),
+      });
     }
   });
 

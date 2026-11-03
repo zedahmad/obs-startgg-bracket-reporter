@@ -37,7 +37,15 @@ const BAN_BASE  = { h: 188, maxWidthRatio: 1, overlap: -30 };
  *   pending → confirmed:   confirm-flash   (brightness spike on the char pixels)
  *   confirmed → pending:   no animation    (snap to 0.3 opacity, undo scenario)
  */
-function renderSlots(container, confirmedChars, pendingChars, isRight, base, progressive = true) {
+function renderSlots(
+  container,
+  confirmedChars,
+  pendingChars,
+  defeatedCodenames,
+  isRight,
+  base,
+  progressive = true,
+) {
   const known = knownChars.get(container);
 
   const confirmedSet = new Set(confirmedChars.map(c => c.codename));
@@ -85,7 +93,8 @@ function renderSlots(container, confirmedChars, pendingChars, isRight, base, pro
     const shiftPx = isRight ? -offsetPx : offsetPx;
 
     const slot = document.createElement('div');
-    slot.className = ['char-slot', newState, animClass].filter(Boolean).join(' ');
+    const defeatedClass = defeatedCodenames.has(char.codename) ? 'defeated' : '';
+    slot.className = ['char-slot', newState, defeatedClass, animClass].filter(Boolean).join(' ');
     slot.style.cssText = `height:${h}px;z-index:${zIdx};${maxW ? `max-width:${maxW}px;` : ''}${marginLeft}`;
 
     const img = document.createElement('img');
@@ -129,6 +138,8 @@ socket.on('draft:update', (state) => {
   const confirmedBansLeft   = state.teamABans.map(find).filter(Boolean);
   const confirmedPicksRight = state.teamBPicks.map(find).filter(Boolean);
   const confirmedBansRight  = state.teamBBans.map(find).filter(Boolean);
+  const defeatedLeft = new Set(state.teamADefeated || []);
+  const defeatedRight = new Set(state.teamBDefeated || []);
 
   // Pending chars from staging state
   let pendingPicksLeft = [], pendingBansLeft = [], pendingPicksRight = [], pendingBansRight = [];
@@ -145,10 +156,10 @@ socket.on('draft:update', (state) => {
     }
   }
 
-  renderSlots(picksA, confirmedPicksLeft,  pendingPicksLeft,  false, PICK_BASE, true);
-  renderSlots(bansA,  confirmedBansLeft,   pendingBansLeft,   false, BAN_BASE,  true);
-  renderSlots(picksB, confirmedPicksRight, pendingPicksRight, true,  PICK_BASE, true);
-  renderSlots(bansB,  confirmedBansRight,  pendingBansRight,  true,  BAN_BASE,  true);
+  renderSlots(picksA, confirmedPicksLeft,  pendingPicksLeft,  defeatedLeft,  false, PICK_BASE, true);
+  renderSlots(bansA,  confirmedBansLeft,   pendingBansLeft,   new Set(),      false, BAN_BASE,  true);
+  renderSlots(picksB, confirmedPicksRight, pendingPicksRight, defeatedRight, true,  PICK_BASE, true);
+  renderSlots(bansB,  confirmedBansRight,  pendingBansRight,  new Set(),      true,  BAN_BASE,  true);
 
   if (state.rpsWinner === 1) revealBadge(firstPickA); else firstPickA.classList.add('hidden');
   if (state.rpsWinner === 2) revealBadge(firstPickB); else firstPickB.classList.add('hidden');

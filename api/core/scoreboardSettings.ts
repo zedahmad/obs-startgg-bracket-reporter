@@ -25,6 +25,14 @@ export type RoundBlockSettings = {
   background: BackgroundSettings;
 };
 
+export type CharacterRailSettings = {
+  enabled: boolean;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 export type ScoreboardSettings = {
   canvas: {
     width: number;
@@ -52,6 +60,8 @@ export type ScoreboardSettings = {
   elements: {
     player1: PlayerBlockSettings;
     player2: PlayerBlockSettings;
+    player1Characters: CharacterRailSettings;
+    player2Characters: CharacterRailSettings;
     round: RoundBlockSettings;
   };
 };
@@ -120,6 +130,20 @@ export const DEFAULT_SCOREBOARD_SETTINGS: ScoreboardSettings = {
         angle: 90,
         customCss: "",
       },
+    },
+    player1Characters: {
+      enabled: true,
+      x: 340,
+      y: 208,
+      width: 180,
+      height: 48,
+    },
+    player2Characters: {
+      enabled: true,
+      x: 1400,
+      y: 208,
+      width: 180,
+      height: 48,
     },
     round: {
       enabled: true,
@@ -249,6 +273,20 @@ function parsePlayerBlock(
   };
 }
 
+function parseCharacterRail(
+  value: unknown,
+  path: string,
+): CharacterRailSettings {
+  const rail = requireRecord(value, path);
+  return {
+    enabled: requireBoolean(rail.enabled, `${path}.enabled`),
+    x: requireNumber(rail.x, `${path}.x`, -10000, 10000),
+    y: requireNumber(rail.y, `${path}.y`, -10000, 10000),
+    width: requireNumber(rail.width, `${path}.width`, 1, 10000),
+    height: requireNumber(rail.height, `${path}.height`, 1, 10000),
+  };
+}
+
 function mergeDefaults(defaults: unknown, value: unknown): unknown {
   if (!isRecord(defaults) || !isRecord(value)) {
     return value === undefined ? defaults : value;
@@ -375,6 +413,14 @@ export function parseScoreboardSettings(value: unknown): ScoreboardSettings {
         elements.player2,
         "scoreboard.elements.player2",
       ),
+      player1Characters: parseCharacterRail(
+        elements.player1Characters,
+        "scoreboard.elements.player1Characters",
+      ),
+      player2Characters: parseCharacterRail(
+        elements.player2Characters,
+        "scoreboard.elements.player2Characters",
+      ),
       round: {
         enabled: requireBoolean(
           round.enabled,
@@ -433,6 +479,17 @@ export function applyPlayerCardSymmetry(
         width: player1.width,
         height: player1.height,
         scoreWidth: player1.scoreWidth,
+      },
+      player2Characters: {
+        ...settings.elements.player2Characters,
+        enabled: settings.elements.player1Characters.enabled,
+        x:
+          settings.canvas.width -
+          settings.elements.player1Characters.x -
+          settings.elements.player1Characters.width,
+        y: settings.elements.player1Characters.y,
+        width: settings.elements.player1Characters.width,
+        height: settings.elements.player1Characters.height,
       },
     },
   };

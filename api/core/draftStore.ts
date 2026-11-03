@@ -16,6 +16,7 @@ class DraftStore {
 
   private initialState(): DraftState {
     return {
+      matchId: null,
       phase: "idle",
       pendingTeam1Name: "",
       pendingTeam2Name: "",
@@ -25,6 +26,8 @@ class DraftStore {
       teamBBans: [],
       teamAPicks: [],
       teamBPicks: [],
+      teamADefeated: [],
+      teamBDefeated: [],
       currentStep: 0,
       currentTeam: null,
       rpsWinner: null,
@@ -72,9 +75,15 @@ class DraftStore {
     this.emit();
   }
 
-  start(ruleset: DraftRuleset, team1Name: string, team2Name: string) {
+  start(
+    ruleset: DraftRuleset,
+    matchId: string,
+    team1Name: string,
+    team2Name: string,
+  ) {
     this.state = {
       ...this.initialState(),
+      matchId,
       phase: "rps",
       ruleset,
       pendingTeam1Name: team1Name || "Team 1",
@@ -84,6 +93,35 @@ class DraftStore {
     this.historyIndex = -1;
     this.saveSnapshot();
     this.emit();
+  }
+
+  toggleDefeated(team: 0 | 1, codename: string): boolean | null {
+    if (this.state.phase !== "complete") return null;
+
+    const picks = team === 0
+      ? this.state.teamAPicks
+      : this.state.teamBPicks;
+    if (!picks.includes(codename)) return null;
+
+    const defeated = team === 0
+      ? this.state.teamADefeated
+      : this.state.teamBDefeated;
+    const isDefeated = defeated.includes(codename);
+    const nextDefeated = isDefeated
+      ? defeated.filter((value) => value !== codename)
+      : [...defeated, codename];
+
+    this.state = {
+      ...this.state,
+      ...(team === 0
+        ? { teamADefeated: nextDefeated }
+        : { teamBDefeated: nextDefeated }),
+    };
+    const { canUndo: _u, canRedo: _r, ...snapshot } = this.state;
+    this.history = [snapshot];
+    this.historyIndex = 0;
+    this.emit();
+    return !isDefeated;
   }
 
   setRpsWinner(winner: 1 | 2) {

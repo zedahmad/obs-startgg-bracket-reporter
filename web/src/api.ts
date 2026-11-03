@@ -1,5 +1,7 @@
 import axios from "axios";
+import type { DraftState } from "./draftTypes";
 import type { SettingsChanges } from "./settingsChanges";
+import type { Match } from "./types";
 
 export const selectScoreboardMatch = async (
   matchId: string,
@@ -190,5 +192,27 @@ export const showScoreboard = async () => {
 
 export const hideScoreboard = async () => {
   const res = await axios.post(`/streamdeck/scoreboard/hide`);
+  return res.data;
+};
+
+export const startCharacterDraft = async (
+  matchId: string,
+  streamId?: string,
+): Promise<{ draft: DraftState; match: Match }> => {
+  const res = await axios.post(`/api/draft/start`, {
+    matchId,
+    streamId,
+  });
+  return res.data;
+};
+
+export const toggleDraftDefeat = async (
+  team: 0 | 1,
+  codename: string,
+): Promise<{ draft: DraftState; match: Match }> => {
+  const res = await axios.post(`/api/draft/defeat`, {
+    team,
+    codename,
+  });
   return res.data;
 };
